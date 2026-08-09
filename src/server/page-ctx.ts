@@ -3,6 +3,16 @@ import { createCtx, type Ctx, type CreateCtxOptions } from './ctx.ts'
 import { isApiError } from './errors.ts'
 
 /**
+ * Sends anyone with an unfinished profile to the step that finishes it.
+ *
+ * Applied by the app's entry points rather than inside `pageCtx`, because
+ * `/onboarding` itself builds a context and a check there would loop.
+ */
+export function requireCompletedProfile(ctx: Ctx): void {
+  if (ctx.user && !ctx.user.profileCompletedAt) redirect('/onboarding')
+}
+
+/**
  * `createCtx` for Server Components.
  *
  * Same context, same authorization, same 404-not-403 rule — translated into

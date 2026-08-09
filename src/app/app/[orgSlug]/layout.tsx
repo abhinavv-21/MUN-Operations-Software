@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell.tsx'
 import { ThemeStyle } from '@/components/ThemeStyle.tsx'
 import { requireOrg } from '@/server/ctx.ts'
-import { pageCtx } from '@/server/page-ctx.ts'
+import { pageCtx, requireCompletedProfile } from '@/server/page-ctx.ts'
 import { getOrganizationThemeCss } from '@/server/services/theme.ts'
 
 /**
@@ -27,6 +27,7 @@ export default async function OrgLayout({
 }) {
   const { orgSlug } = await params
   const ctx = await pageCtx({ organizationSlug: orgSlug })
+  requireCompletedProfile(ctx)
   const membership = requireOrg(ctx)
 
   const themeCss = await getOrganizationThemeCss(membership.organizationId)

@@ -7,7 +7,7 @@ import { Card, CardHeader } from '@/components/ui/Card.tsx'
 import { PageHeader } from '@/components/ui/PageHeader.tsx'
 import { EmptyState } from '@/components/ui/States.tsx'
 import { redirect } from 'next/navigation'
-import { pageCtx } from '@/server/page-ctx.ts'
+import { pageCtx, requireCompletedProfile } from '@/server/page-ctx.ts'
 import { optionalClaims } from '@/server/auth/session.ts'
 import {
   createOrganization,
@@ -22,6 +22,7 @@ export default async function AppHomePage() {
   // Called directly, not through fetch. The first paint needs no API round trip
   // and no second copy of the authorization rules.
   const ctx = await pageCtx()
+  requireCompletedProfile(ctx)
   let organizations = await listMyOrganizations(ctx)
 
   /*
