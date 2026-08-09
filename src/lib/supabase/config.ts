@@ -23,6 +23,19 @@
 const RAW_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const RAW_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+/**
+ * Validates one public value, and says which one is wrong.
+ *
+ * The newline check is not defensive padding. A deployment had two lines pasted
+ * into one variable's value box — the anon key, a newline, then
+ * `SUPABASE_SERVICE_ROLE_KEY=…` — and the only symptom was the browser's own
+ * "Failed to execute 'fetch' on 'Window': Invalid value", because a header
+ * value cannot contain a newline. Nothing named the variable, nothing said the
+ * value was malformed, and the same broken key silently failed the OAuth token
+ * exchange as "that link has expired".
+ *
+ * A misconfiguration should be legible at the first request.
+ */
 function required(value: string | undefined, name: string): string {
   if (!value) {
     throw new Error(
@@ -30,7 +43,26 @@ function required(value: string | undefined, name: string): string {
         `not when it was started — set it in the deployment's environment and rebuild.`,
     )
   }
-  return value
+
+  const trimmed = value.trim()
+
+  if (/[\r\n]/.test(trimmed)) {
+    const [first = ''] = trimmed.split(/[\r\n]/)
+    throw new Error(
+      `${name} contains more than one line — it looks like several variables were pasted into ` +
+        `one value. It should be exactly "${first.slice(0, 24)}…" and nothing after it.`,
+    )
+  }
+
+  // A value that still carries `NAME=` is the same paste mistake in a different
+  // shape, and produces the same unreadable failure.
+  if (/^[A-Z0-9_]+=/.test(trimmed)) {
+    throw new Error(
+      `${name} looks like a whole assignment rather than a value. Set it to the part after the "=".`,
+    )
+  }
+
+  return trimmed
 }
 
 export function supabaseUrl(): string {

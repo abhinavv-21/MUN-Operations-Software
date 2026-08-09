@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 
 /**
  * A guard for a bug that cost a working sign-in page and was invisible to
@@ -31,5 +31,51 @@ describe('browser environment variables', () => {
   it('never reads a NEXT_PUBLIC value through a computed key', () => {
     // `process.env[anything]` in a module the browser loads is the bug.
     expect(source).not.toMatch(/process\.env\s*\[/)
+  })
+})
+
+describe('a malformed public value', () => {
+  const load = async (url?: string, key?: string) => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = url
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = key
+    vi.resetModules()
+    return import('../src/lib/supabase/config.ts')
+  }
+
+  const original = {
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  }
+
+  afterAll(() => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = original.url
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = original.key
+  })
+
+  it('names the variable when two were pasted into one box', async () => {
+    // The real failure: the anon key, a newline, then the next variable's whole
+    // assignment. The browser reported only "Invalid value" from fetch, because
+    // a header value cannot contain a newline.
+    const { supabaseAnonKey } = await load(
+      'https://x.supabase.co',
+      'sb_publishable_abc\nSUPABASE_SERVICE_ROLE_KEY=sb_secret_def',
+    )
+
+    expect(() => supabaseAnonKey()).toThrow(/more than one line/)
+    expect(() => supabaseAnonKey()).toThrow(/NEXT_PUBLIC_SUPABASE_ANON_KEY/)
+  })
+
+  it('names the variable when the whole assignment was pasted', async () => {
+    const { supabaseAnonKey } = await load(
+      'https://x.supabase.co',
+      'NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_abc',
+    )
+
+    expect(() => supabaseAnonKey()).toThrow(/rather than a value/)
+  })
+
+  it('trims stray whitespace rather than failing on it', async () => {
+    const { supabaseUrl } = await load('  https://x.supabase.co  ', 'sb_publishable_abc')
+    expect(supabaseUrl()).toBe('https://x.supabase.co')
   })
 })
