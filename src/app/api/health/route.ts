@@ -14,6 +14,11 @@ import { unsafeDb } from '@/server/db.ts'
  */
 export const dynamic = 'force-dynamic'
 
+/**
+ * `auth: 'none'`, not merely "not required". An uptime monitor has no cookies
+ * to send, and a health check that answers 401 to one is a health check that
+ * reports the service as down whenever it is up.
+ */
 export const GET = withApi(async () => {
   const startedAt = Date.now()
   const [{ now }] = await unsafeDb.$queryRaw<[{ now: Date }]>`SELECT NOW() AS now`
@@ -26,4 +31,4 @@ export const GET = withApi(async () => {
       serverTime: now.toISOString(),
     },
   })
-})
+}, { auth: 'none' })

@@ -9,10 +9,12 @@ export default defineConfig({
     // The integration tests share one local database and truncate between
     // files. Running files in parallel would have them truncate each other.
     fileParallelism: false,
-    // With parallelism already off, isolation buys nothing and costs a fresh
-    // module registry per file — which means a fresh globalThis, which means
-    // the "no database" notice printed once per file instead of once per run.
-    isolate: false,
+    // Isolation stays ON. Turning it off shares one module registry across
+    // files, which means a `vi.mock` in one file can reach the next one — the
+    // membership suite stubs the session module, and without isolation the API
+    // contract suite silently inherited that stub. A tidier skip notice is not
+    // worth tests that pass for a reason you did not write.
+    isolate: true,
     hookTimeout: 30_000,
     testTimeout: 30_000,
   },

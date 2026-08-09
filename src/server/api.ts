@@ -13,7 +13,7 @@
 import { NextResponse } from 'next/server'
 import { ApiError, isApiError } from './errors.ts'
 import { translatePrismaError } from './prisma-errors.ts'
-import { createCtx, type Ctx, type CreateCtxOptions } from './ctx.ts'
+import { createCtx, type AuthMode, type Ctx, type CreateCtxOptions } from './ctx.ts'
 
 export interface ApiHandlerArgs<P> {
   request: Request
@@ -22,8 +22,11 @@ export interface ApiHandlerArgs<P> {
 }
 
 export interface WithApiOptions<P> {
-  /** Defaults to true. Set false for routes a signed-out visitor may reach. */
-  auth?: boolean
+  /**
+   * Defaults to `'required'`, which fails closed: a route that forgets to say
+   * anything is a route nobody can reach anonymously.
+   */
+  auth?: AuthMode
   /**
    * The route param holding the organisation slug, usually `'orgSlug'`.
    * Declaring it is what makes a non-member get a 404 rather than data.
@@ -90,7 +93,7 @@ export function withApi<P = Record<string, never>>(
       const params = ((await context?.params) ?? {}) as P
 
       const fromPath: CreateCtxOptions = {
-        requireAuth: options.auth ?? true,
+        auth: options.auth ?? 'required',
         organizationSlug: options.orgParam
           ? String((params as Record<string, unknown>)[options.orgParam])
           : undefined,

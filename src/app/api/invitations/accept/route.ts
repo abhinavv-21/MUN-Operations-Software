@@ -13,7 +13,7 @@ const tokenSchema = z.object({ token: z.string().min(32).max(128) })
 export const GET = withApi(async ({ request, ctx }) => {
   const { token } = parseSearchParams(new URL(request.url), tokenSchema)
   return json({ invitation: await previewInvitation(token, ctx.user?.email ?? null) })
-}, { auth: false })
+}, { auth: 'optional' })
 
 export const POST = withApi(
   async ({ request, ctx }) => {

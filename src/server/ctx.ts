@@ -34,9 +34,19 @@ export interface Ctx {
   audit: AuditRecorder
 }
 
+/**
+ * Three states, not two, because "public" means two different things.
+ *
+ * `optional` still looks the caller up — the invitation preview needs to say
+ * "you are signed in as X" to someone who may or may not be. `none` skips the
+ * session lookup entirely, for routes that have no use for identity at all and
+ * must work where there is no cookie store to read: the health check, and the
+ * public registration endpoint in Stage 5.
+ */
+export type AuthMode = 'required' | 'optional' | 'none'
+
 export interface CreateCtxOptions {
-  /** When false, an anonymous caller gets `user: null` instead of a 401. */
-  requireAuth?: boolean
+  auth?: AuthMode
   /** Resolves and authorises the organisation. A non-member gets a 404. */
   organizationSlug?: string
   /** Resolves the conference role. Requires an organisation. */
@@ -61,10 +71,10 @@ export function clientAddress(request?: Request): string | undefined {
 }
 
 export async function createCtx(options: CreateCtxOptions = {}): Promise<Ctx> {
-  const { requireAuth = true, organizationSlug, conferenceId, request } = options
+  const { auth = 'required', organizationSlug, conferenceId, request } = options
 
-  const claims = await optionalClaims()
-  if (!claims && requireAuth) throw ApiError.unauthorized('Sign in to continue')
+  const claims = auth === 'none' ? null : await optionalClaims()
+  if (!claims && auth === 'required') throw ApiError.unauthorized('Sign in to continue')
 
   const user = claims ? await getOrCreateUser(claims) : null
 

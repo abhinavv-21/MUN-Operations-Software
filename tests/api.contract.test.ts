@@ -1,9 +1,19 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { ApiError } from '../src/server/errors.ts'
 import { json, toApiError, withApi } from '../src/server/api.ts'
 import { parseJsonBody, parseOrThrow } from '../src/server/validate.ts'
 import { describeWithDb } from './support/harness.ts'
+
+/**
+ * An empty cookie store, so "nobody is signed in" is a real path through the
+ * Supabase client rather than a stub of our own session module. Outside a
+ * request, `cookies()` throws rather than returning nothing, which is a fact
+ * about Next and not about authentication.
+ */
+vi.mock('next/headers', () => ({
+  cookies: async () => ({ getAll: () => [], set: () => {} }),
+}))
 
 const post = (body: unknown) =>
   new Request('https://example.test/api/thing', {
@@ -30,7 +40,7 @@ describe('the error contract', () => {
   it('serialises a deliberate failure as { error, code }', async () => {
     const handler = withApi(async () => {
       throw ApiError.forbidden('Not yours')
-    })
+    }, { auth: 'none' })
 
     const response = await handler(post({}), undefined)
     const body = await response.json()
@@ -48,7 +58,9 @@ describe('the error contract', () => {
 
   it('answers 422 with a path and message for each invalid field', async () => {
     const schema = z.object({ email: z.email(), seats: z.number().int().min(1) })
-    const handler = withApi(async ({ request }) => json(await parseJsonBody(request, schema)))
+    const handler = withApi(async ({ request }) => json(await parseJsonBody(request, schema)), {
+      auth: 'none',
+    })
 
     const response = await handler(post({ email: 'nope', seats: 0 }), undefined)
     const body = await response.json()
@@ -76,8 +88,9 @@ describe('the error contract', () => {
   })
 
   it('answers 400, not 422, for a body that is not JSON at all', async () => {
-    const handler = withApi(async ({ request }) =>
-      json(await parseJsonBody(request, z.object({}))),
+    const handler = withApi(
+      async ({ request }) => json(await parseJsonBody(request, z.object({}))),
+      { auth: 'none' },
     )
 
     const response = await handler(
@@ -116,7 +129,7 @@ describe('the error contract', () => {
     delete process.env.EXPOSE_ERROR_DETAILS
     const handler = withApi(async () => {
       throw new Error('the connection string is postgres://user:hunter2@host/db')
-    })
+    }, { auth: 'none' })
 
     const response = await handler(post({}), undefined)
     const body = await response.json()
@@ -126,11 +139,22 @@ describe('the error contract', () => {
     expect(JSON.stringify(body)).not.toContain('hunter2')
   })
 
+  it('requires a session unless a route says otherwise', async () => {
+    // Fails closed: a route that declares nothing is a route nobody reaches
+    // anonymously, so forgetting the option is safe rather than a hole.
+    const handler = withApi(async () => json({ secret: true }))
+
+    const response = await handler(post({}), undefined)
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'Sign in to continue', code: 401 })
+  })
+
   it('attaches a stack only when EXPOSE_ERROR_DETAILS is explicitly on', async () => {
     process.env.EXPOSE_ERROR_DETAILS = 'true'
     const handler = withApi(async () => {
       throw new Error('boom')
-    })
+    }, { auth: 'none' })
 
     const body = await (await handler(post({}), undefined)).json()
 
@@ -140,6 +164,18 @@ describe('the error contract', () => {
 })
 
 describeWithDb('the health route', () => {
+  it('answers an uptime monitor that has no session', async () => {
+    const { GET } = await import('../src/app/api/health/route.ts')
+
+    // Regression: making auth default to required in Stage 2 turned this into
+    // a 401, so the deployment reported itself as down while it was up. The
+    // default is right — a route that says nothing should be closed — and this
+    // is the route that has to opt out.
+    const response = await GET(new Request('https://example.test/api/health'), undefined)
+
+    expect(response.status).toBe(200)
+  })
+
   it('answers 200 only after a real database round trip', async () => {
     const { GET } = await import('../src/app/api/health/route.ts')
 
