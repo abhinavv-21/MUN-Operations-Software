@@ -22,6 +22,24 @@ describeWithDb('row level security', () => {
     expect(rows[0]?.rolbypassrls).toBe(true)
   })
 
+  /**
+   * This is the load-bearing one, verified against the real Supabase project on
+   * 2026-08-09 by creating a table and inspecting what it inherited:
+   *
+   *   grants  -> postgres, service_role only. Not anon, not authenticated.
+   *   RLS     -> off.
+   *
+   * So the grant side takes care of itself: Supabase's default ACL that grants
+   * the browser-reachable roles is registered for `supabase_admin`, and our
+   * migrations run as `postgres`. The REVOKE in the Stage 1 security migration
+   * still matters for the tables that existed when it ran, but it is not what
+   * protects the next one.
+   *
+   * Row level security is different. A table added in Stage 4 or Stage 6
+   * arrives with RLS off and no policies, which is wide open rather than
+   * closed. Nothing in Postgres will turn it on for us — event triggers need a
+   * superuser and our role is not one. This test is the entire mechanism.
+   */
   it('has row level security enabled on every table', async () => {
     const unprotected = await unsafeDb.$queryRaw<{ tablename: string }[]>`
       SELECT c.relname AS tablename

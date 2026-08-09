@@ -46,6 +46,22 @@ mun-pg start | stop | status | log
 
 WSL runs no init system, so the cluster does not come back after a reboot. `npm run dev` checks and tells you.
 
+## Deploying
+
+Vercel runs `vercel-build`, which is `prisma migrate deploy && prisma generate && next build`. Migrations therefore run *before* the build, so a bad migration fails the deploy instead of shipping a build that cannot query.
+
+Environment variables to set on the Vercel project, for all three environments:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | Supavisor **transaction** pooler, port 6543, with `?pgbouncer=true&connection_limit=1` |
+| `DIRECT_URL` | Supavisor **session** pooler, port 5432 |
+| `NEXT_PUBLIC_SUPABASE_URL` | Project root only, no `/rest/v1` path |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The publishable key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only. Never prefixed `NEXT_PUBLIC_` |
+
+Supabase's true direct host, `db.<ref>.supabase.co:5432`, is IPv6-only. The session pooler is the correct `DIRECT_URL` from an IPv4 network, not a compromise.
+
 ## Layout
 
 ```
@@ -67,7 +83,9 @@ Three layers, because one is not enough.
 
 **A model coverage test.** The extension protects the models it knows about. `tests/models.coverage.test.ts` reads the generated client's model registry and fails until every model is classified in `src/server/models.ts`, which is what protects the models nobody has written yet. Adding a table without deciding how it is scoped breaks CI rather than production.
 
-**Deny-all row level security.** Supabase exposes PostgREST over every table in `public` to anyone holding the publishable anon key, and that key ships in the browser bundle. Every table has RLS enabled with no policies at all, and `anon`/`authenticated` are revoked including through `ALTER DEFAULT PRIVILEGES`, so a table added in a later migration inherits the deny. The role Prisma connects as has `BYPASSRLS`, which is asserted by a test rather than assumed.
+**Deny-all row level security.** Supabase exposes PostgREST over every table in `public` to anyone holding the publishable anon key, and that key ships in the browser bundle. Every table has RLS enabled with no policies at all, and `anon`/`authenticated` are revoked. The role Prisma connects as has `BYPASSRLS`, which is asserted by a test rather than assumed — had it come back false, every query in the product would return zero rows.
+
+A table added by a later migration does **not** inherit any of this. Measured against the project: a new table arrives granted to `postgres` and `service_role` only, so the grant side is safe by default, but it arrives with RLS **off**, which is wide open rather than closed. Postgres will not fix that for us, because an event trigger on `CREATE TABLE` needs a superuser and our role is not one. So `tests/security.rls.test.ts` is the mechanism: every migration that adds a table repeats the `ENABLE ROW LEVEL SECURITY` block, and the test fails until it does.
 
 RLS is deliberately *not* the tenancy mechanism. Under a transaction-mode pooler `SET LOCAL` only holds inside an explicit transaction, which would mean wrapping every query in one plus a policy on every table in every migration — a lot of machinery to protect a system whose only client is code we wrote.
 
