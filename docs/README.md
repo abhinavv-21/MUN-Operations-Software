@@ -13,14 +13,14 @@ specification no longer compile.
 | | Document | What it is |
 | --- | --- | --- |
 | 1 | [`01-CURRENT-STATE.md`](./01-CURRENT-STATE.md) | What is built, what is deliberately not, and what must never be built in v1 |
-| 2 | [`02-INVARIANTS.md`](./02-INVARIANTS.md) | Eight rules, the mechanism enforcing each, and the command that proves it |
+| 2 | [`02-INVARIANTS.md`](./02-INVARIANTS.md) | Ten rules, the mechanism enforcing each, and the command that proves it |
 | 3 | [`03-ARCHITECTURE.md`](./03-ARCHITECTURE.md) | Tenancy, context, services, the error contract |
 | 4 | [`04-STACK-DECISIONS.md`](./04-STACK-DECISIONS.md) | Where the original spec's code no longer works, and what replaced it |
 | 5 | [`05-DESIGN-SYSTEM.md`](./05-DESIGN-SYSTEM.md) | Tokens, grounds, runtime theming, the contrast contract |
 | 6 | [`06-ENVIRONMENT.md`](./06-ENVIRONMENT.md) | Machine setup, environment variables, deployment, runbook |
 | 7 | [`07-TRAPS.md`](./07-TRAPS.md) | Every defect found during the build, and the lesson from each |
 | 8 | [`08-TESTING.md`](./08-TESTING.md) | The harness contract, what each suite guards, how to prove a fix |
-| 9 | [`09-NEXT-STAGES.md`](./09-NEXT-STAGES.md) | Stages 7 and 8, with their exit criteria |
+| 9 | [`09-NEXT-STAGES.md`](./09-NEXT-STAGES.md) | Stage 7 as built, and Stage 8 with its exit criterion |
 | — | [`KICKSTART.md`](./KICKSTART.md) | The prompt to paste into a fresh session |
 | — | [`REFERENCE-LRI-MUN-X.md`](./REFERENCE-LRI-MUN-X.md) | Decision record for the **single-tenant predecessor** this product replaces |
 
@@ -36,6 +36,9 @@ specification no longer compile.
 | Debug a sign-in that fails silently | `07`, the environment-variable and stranded-spinner entries |
 | Debug an intermittent 500 under load | `07`, the serialization-failure entry |
 | Deploy, or change an environment variable | `06` |
+| Add a mutating route | `02` #9 — it must declare an audit action, and three tests check it |
+| Touch anything offline | `02` #10, `src/lib/offline/policy.ts`, and the comment in `providers.tsx` |
+| Change an exporter | `09`, the Stage 7 decisions — the writers are hand-written for deployment reasons |
 | Start the next stage | `01`, then `09` |
 
 ## Two warnings

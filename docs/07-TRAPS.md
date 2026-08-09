@@ -173,6 +173,59 @@ newline or look like a whole `NAME=value` assignment.
 **Lesson:** a misconfiguration should be legible at the first request. Also: **redeploying does not
 clean a stored value** — the variable itself has to be edited, which cost a round trip to discover.
 
+### 14. Removing a member answered 500, and every test was green — *Stage 7*
+
+**Symptom:** none, for two stages. Found by the Stage 7 audit sweep, which calls every mutating
+admin route.
+
+**Cause:** `removeMember` deletes the person's conference grants after deleting their membership:
+
+```ts
+await tx.conferenceRole.deleteMany({ where: { userId: targetUserId } })
+```
+
+`ConferenceRole` is org-reachable — readable across an organisation, writable only with a conference
+in scope — and this route has no conference. The scoping extension threw, correctly, and `withApi`
+turned it into a 500. **Removing anybody from an organisation had never worked.**
+
+The reason nothing caught it is the same shape as trap 1: the only test on `DELETE` asserted the
+*refusal* path, `refuses to remove the last owner`, and that path returns from
+`assertNotLastOwner` before ever reaching this line. A test named after a guarantee adjacent to the
+broken one guards nothing.
+
+**Fix:** `ORG_REVOCABLE_MODELS` in `src/server/models.ts` — one model, one operation. `deleteMany`
+on `ConferenceRole` may run with only an organisation in scope, filtered through
+`{ conference: { organizationId } }`. Deliberately not a widening of `ORG_REACHABLE_MODELS`:
+nothing here can create or update across conferences, only revoke, and the filter still bounds it to
+one tenant.
+
+The alternative — leaving grants behind — is a security bug, not untidiness: re-inviting somebody
+silently restores access they used to have. Doing it one conference at a time outside the
+transaction is worse again, because a failure halfway deletes the membership and keeps the grants.
+
+**Proven by reverting it:** three tests go red, including the sweep, with `500` in place of `200`.
+
+**Lesson:** the sweep found this because it calls *every* mutating admin route rather than the ones
+somebody thought to test. Coverage of a route list is a different thing from coverage of behaviour,
+and this is the class of bug only the first one finds.
+
+### 15. The E2E harness drove the previous build — *Stage 7*
+
+**Symptom:** a check that should have failed came back green, and one that should have passed timed
+out at an unrelated step.
+
+**Cause:** `scripts/e2e-offline.mjs` starts the app with `spawn('npx', ['next', 'start'])` and killed
+it with `child.kill()`. `npx` forks `next`, which forks `next-server`; killing the wrapper leaves
+`next-server` holding the port. The next run's `waitForServer` got a 200 immediately — from the
+**previous build** — and drove that instead.
+
+**Fix:** `detached: true` and `process.kill(-pid)`, plus a guard that refuses to start when something
+already answers on the port. A stale server is not a condition to work around silently.
+
+**Lesson:** an end-to-end harness that can silently test the wrong binary is worse than none,
+because its green is indistinguishable from a real one. When a revert-the-fix check does not go red,
+suspect the harness before the conclusion.
+
 ---
 
 ## Process
@@ -212,5 +265,11 @@ product would have returned zero rows. Before committing to Prisma 7, `Prisma.dm
 extensions and transaction scoping were each probed in a scratch project.
 
 **Prove a security fix by reverting it.** A test that passes after a fix has not demonstrated it
-catches anything. Traps 1 and 8 were both confirmed by putting the bug back and watching the suite
-go red.
+catches anything. Traps 1, 8 and 14 were all confirmed by putting the bug back and watching the
+suite go red, and each of the three layers of the Stage 7 audit manifest was confirmed by breaking
+that layer alone.
+
+**Reverting also proves a *design* decision, not only a fix.** Commenting out `networkMode: 'always'`
+and re-running the offline harness reproduces the venue-wifi bug exactly as the predecessor
+describes it: the check-in never resolves, never queues and never reports anything. A comment saying
+why a line exists is worth more once you have watched its absence.

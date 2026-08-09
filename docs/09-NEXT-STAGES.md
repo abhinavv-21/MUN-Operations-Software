@@ -7,50 +7,62 @@ the exit criterion output before moving on.
 
 ---
 
-## Stage 7 — conference-day operations
+## Stage 7 — conference-day operations — **complete**
 
-Everything the organising committee touches on the day.
+Everything the organising committee touches on the day. Built, deployed-ready and green.
 
-### Build
+### What landed
 
-- **Attendance check-in** — per delegate, per conference.
-- **`LogisticsReq`** — categories, statuses, resolution.
-- **Awards** — per committee.
-- **Exporters** — CSV, XLSX, PDF.
-- **The audit-log viewer**, with filters.
-- **The dashboard.**
-- **A Dexie offline queue for exactly two writes**, a service worker, and a connection pill.
+- **Attendance** — `AttendanceRecord`, keyed `(conference, delegate, day)`. CONTRIBUTOR may mark.
+- **`LogisticsRequest`** — categories, priorities, statuses, resolution required to close.
+- **Awards** — per committee, free-text titles, the delegate must sit in the committee.
+- **Exporters** — CSV, XLSX and PDF, all hand-written, no new dependency. See below.
+- **The audit-log viewer**, conference-scoped, admin only, cursor-paged on uuidv7 ids.
+- **The dashboard**, now the conference root page; committees moved to `/committees`.
+- **A conference sub-navigation**, because nine screens with no navigation is unusable.
+- **Delegate editing**, which did not exist and which the exit criterion needs — it is the write
+  that must *not* queue.
+- **The Dexie offline queue**, a service worker, an offline page, a connection pill and an update
+  prompt.
 
-### The part that matters most
+### Decisions worth knowing before changing any of it
 
-**The offline queue holds exactly two writes: a logistics request and an attendance check-in.**
-Everything else fails fast, deliberately.
+**The exporters are hand-written on purpose.** `pdfkit` reads `.afm` font metrics from disk at
+runtime, which a serverless bundle does not carry; `exceljs` pulls a stream and zip stack that has
+to be marked external; SheetJS is no longer on npm. All three are deployment problems, not size
+problems. What replaced them is ~450 lines with no runtime dependency beyond `node:zlib`, and
+`tests/exporters.test.ts` unzips the workbook and walks the PDF cross-reference table rather than
+trusting either.
 
-Queueing a delegate edit means queueing a conflict you cannot resolve later without showing the user
-a merge dialog they will not understand. Two people must not both believe they hold the truth.
+**The PDF sets its table in Courier.** Proportional layout needs a per-glyph width table, and one
+transcribed by hand is a silent layout bug waiting for the wrong string. Courier is exactly 600/1000
+em, so every measurement is a multiplication that cannot be subtly wrong.
 
-This is why `networkMode: 'always'` is already set on mutations in `src/app/providers.tsx` — React
-Query's default *pauses* a mutation while the browser reports itself offline, so an edit on venue
-wifi sat on "Saving" indefinitely with no error and no way out. The two writes that genuinely should
-survive being offline will call `apiFetch` directly and queue on its `code: 0` error.
+**CSV neutralises formulas; XLSX does not need to.** Delegate names arrive through the public form,
+so `=HYPERLINK(...)` as a name is a real payload against the organiser who opens the export. CSV
+prefixes an apostrophe; the XLSX writes every string as `t="inlineStr"`, which Excel never
+evaluates.
 
-Read the comment in `providers.tsx` before touching any of this; it carries the full reasoning.
+**`ORG_REVOCABLE_MODELS` was added to the tenancy extension.** Narrowly — see `02-INVARIANTS.md` #2
+and `07-TRAPS.md` #14.
 
-### Worth porting from the predecessor
+### Exit criterion — met
 
-`exporters.ts`, the attendance/logistics/awards route logic, `offline.ts` and its two-writes-only
-policy, `ConnectionPill` and `UpdatePrompt`. `SaveIndicator` is already ported.
+```
+▸ Criterion 1a — an attendance check-in, made offline
+  ✓ nothing reached the database, because there is no network
+  ✓ it is in the Dexie queue
+▸ Criterion 1b — a logistics request, made offline
+  ✓ both writes are in one queue, in the order they were made
+▸ Criterion 2 — editing a delegate offline fails immediately
+  ✓ it failed in 133 ms rather than hanging on "Saving"
+  ✓ the edit was NOT queued — the queue still holds exactly the two writes
+▸ Reconnecting
+  ✓ both writes landed in Postgres (attendance/logistics = 1/1)
+```
 
-Everything new is conference-scoped: add each model to `TENANT_MODELS`, and repeat the RLS block in
-the migration. The coverage test and the RLS test will both fail until you do — that is them working.
-
-### Exit criterion
-
-- With devtools set to Offline, a logistics request **and** an attendance check-in both queue and
-  then land in the database on reconnect.
-- Editing a delegate offline fails **immediately** with "you appear to be offline" rather than
-  hanging. This is the venue-wifi bug the `networkMode: 'always'` decision exists for.
-- A test walks the route manifest and asserts every mutating admin route writes an `AuditLog` row.
+Run it with `npm run build && node scripts/e2e-offline.mjs`. The third clause — the route manifest —
+is `npx vitest run tests/audit.manifest.test.ts`.
 
 ---
 
@@ -61,7 +73,8 @@ An organiser runs their organisation without emailing you.
 ### Build
 
 - The members screen — **already built**: invite, role change, remove, last-owner protection.
-  Ownership transfer has a service and a route but no UI control.
+  Ownership transfer has a service and a route but no UI control. (Removal only started working in
+  Stage 7 — `07-TRAPS.md` #14.)
 - Organisation settings, including branding — the theme service and schema exist; there is no form.
 - **Conference settings** — dates, venue, fee, deadline, status, theme. `updateConference` and its
   `PATCH` route exist and are tested; only the form is missing. Arguably belongs earlier.
@@ -76,8 +89,10 @@ An organiser runs their organisation without emailing you.
 ### Exit criterion
 
 - With the publishable anon key, `curl` against PostgREST for `/rest/v1/Delegate` returns
-  permission-denied while the app works normally. **Already true and verified**, but re-check after
-  Stage 7 adds tables.
+  permission-denied while the app works normally. **Already true and verified.** Stage 7 added
+  `AttendanceRecord`, `LogisticsRequest` and `Award`; all three carry RLS, asserted by
+  `tests/security.rls.test.ts`, but the live PostgREST check should be repeated against Supabase
+  once they are deployed.
 - The last OWNER cannot demote or remove themselves. **Already true and tested.**
 - Lighthouse ≥ 90 on the marketing page and the public registration page.
 - `npm run typecheck` clean, `npm test` green, production deploy from `main`.
@@ -89,6 +104,8 @@ An organiser runs their organisation without emailing you.
 | Gap | Where it stands |
 | --- | --- |
 | Conference settings form | Service, schema, route and validation all exist and are tested |
+| Organisation-level audit viewer | The conference viewer exists; rows with a null `conferenceId` have no screen |
+| PDF in non-Latin scripts | Standard-14 fonts only, so `?` for Devanagari and CJK. Needs an embedded font subset |
 | Ownership transfer UI | `POST /api/orgs/[orgSlug]/transfer-ownership` exists; no control calls it |
 | Committee seat editing | `updateCommittee` exists; the UI only creates and deletes |
 | `prisma/seed.ts` | Does not exist. Fixtures are built inline in tests |

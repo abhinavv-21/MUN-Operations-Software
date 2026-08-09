@@ -1,10 +1,12 @@
 # Invariants
 
-Eight rules. Each has a **mechanism** that enforces it and a **command** that proves it.
+Ten rules. Each has a **mechanism** that enforces it and a **command** that proves it.
 
 They are listed with mechanisms because a rule with no mechanism is a preference, and preferences
-decay. Five came from the original specification. Three were added during the build, each after a
-defect that the original five did not catch.
+decay. Five came from the original specification. Three were added during Stages 1–6, each after a
+defect the original five did not catch, and two more in Stage 7 — one after a route was found to
+have never written its audit row, one because the offline rule is a product decision that a comment
+alone cannot hold.
 
 ---
 
@@ -25,6 +27,12 @@ Two rules inside this one that are easy to lose:
   shape into operator-facing text.
 - **404, not 403, for "exists but is not yours".** A 403 confirms the resource exists.
 
+The second rule is about *other tenants*, and Stage 7 made the boundary explicit.
+`requireConferenceAdmin` answers **403**, because reaching it means the conference is already inside
+the caller's own organisation — its existence is not a secret from them, and what they lack is the
+rank. Hiding an organisation's own chain of command from its own members is not the thing the rule
+protects.
+
 ---
 
 ## 2. The tenancy rule
@@ -38,6 +46,12 @@ it everywhere except an explicit allowlist, and `no-restricted-syntax` blocks `$
 
 *The complete allowlist* (in `eslint.config.mjs`): `src/server/db.ts`, `src/server/ctx.ts`,
 `src/server/scope-resolution.ts`, `src/app/api/health/route.ts`, `tests/**`.
+
+*One narrow exception inside the extension itself*, added in Stage 7: `ORG_REVOCABLE_MODELS`.
+`deleteMany` on `ConferenceRole` may run with only an organisation in scope, filtered through
+`{ conference: { organizationId } }`, because removing somebody from an organisation has to take
+their grants on every conference in it. Deletion only, membership tables only, still bounded to one
+tenant. It exists because the alternative was a route that answered 500 — see `07-TRAPS.md` #14.
 
 *Proof:* `npm run lint`. To see it fire, write `import { unsafeDb } from '@/server/db.ts'` into any
 service.
@@ -162,6 +176,52 @@ curl -s https://munopshub.vercel.app/sign-in \
 
 ---
 
+## 9. Every mutating admin route writes an audit row — *added in Stage 7*
+
+**A route that changes something inside an organisation leaves a trace of who changed it.**
+
+*Mechanism:* three layers, because none of them holds alone.
+
+1. `tests/audit.manifest.test.ts` walks every `route.ts` under `src/app/api`, finds each exported
+   `POST`/`PUT`/`PATCH`/`DELETE`, and requires every one that resolves an organisation to declare an
+   `audit:` action. A route that is genuinely not an admin route has to be listed in
+   `NON_ADMIN_ROUTES` **with a written reason**.
+2. `withApi` **throws under Vitest** when a route declares an audit action, succeeds, and wrote no
+   row. A declaration is a comment until something checks it.
+3. The live sweep in the same file calls every mutating admin route once against a real database, so
+   layer 2 has the chance to fire on all of them rather than on whichever happen to be covered
+   elsewhere. A fourth test fails if a route exists that the sweep never calls.
+
+*Proof:* `npx vitest run tests/audit.manifest.test.ts`. Each layer was confirmed by breaking it
+alone: delete an `audit:` option (layer 1 fails), delete the `ctx.audit.record` call from a service
+(layer 2 fails, naming the route and the expected action), add a new mutating admin route (layer 3
+fails, naming the file).
+
+---
+
+## 10. The offline queue holds exactly two writes — *added in Stage 7*
+
+**A logistics request and an attendance check-in. Everything else fails fast.**
+
+Not a technical limit. Both of those are append-only from the operator's side and idempotent on the
+server — attendance by its natural key `(conference, delegate, day)`, logistics by a
+browser-minted `clientRequestId`. Nothing without that property may be queued, because queueing an
+edit queues a conflict that cannot be resolved later without a merge dialog nobody will understand.
+
+*Mechanism:* `src/lib/offline/policy.ts` holds the list and the reasoning.
+`tests/offline.policy.test.ts` asserts the list is exactly those two, asserts both idempotency
+mechanisms exist in the schema and services, and greps the source to assert only the attendance and
+logistics screens import `sendOrQueue`. `networkMode: 'always'` in `src/app/providers.tsx` is the
+other half: it stops React Query pausing everything else into a promise that never settles.
+
+*Proof:* `npx vitest run tests/offline.policy.test.ts` for the policy, and
+`node scripts/e2e-offline.mjs` for the browser half — a real headless Chrome with
+`Network.emulateNetworkConditions { offline: true }`, which is the command the devtools Offline
+checkbox sends. Comment out `networkMode: 'always'`, rebuild, and the check-in hangs instead of
+queueing.
+
+---
+
 ## Running all of it
 
 ```bash
@@ -169,3 +229,12 @@ npm run typecheck && npm run lint && npm test && npm run build
 ```
 
 That is exactly what CI runs, in that order, on every push.
+
+Two things are deliberately outside it, because both need something a laptop or a CI runner may not
+have:
+
+```bash
+npm run build && node scripts/e2e-offline.mjs   # invariant 10, in a real browser
+```
+
+See `08-TESTING.md`.

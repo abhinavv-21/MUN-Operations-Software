@@ -54,7 +54,7 @@ here to close the PostgREST hole, which has nothing to do with our code at all.
 
 | Axis | Models | Scoped by |
 | --- | --- | --- |
-| **Tenant** | `Committee`, `CommitteeCountry`, `ConferenceRole`, `Registration`, `Delegate`, `Assignment`, `ConferenceIntegration` | `conferenceId` |
+| **Tenant** | `Committee`, `CommitteeCountry`, `ConferenceRole`, `Registration`, `Delegate`, `Assignment`, `ConferenceIntegration`, `AttendanceRecord`, `LogisticsRequest`, `Award` | `conferenceId` |
 | **Organisation** | `Membership`, `Conference`, `Invitation`, `AuditLog` | `organizationId` |
 | **Global** | `Organization`, `User` | nothing — each needs a reason |
 
@@ -78,6 +78,19 @@ to scope to.
 Deliberately narrow, in two ways. **Reads only**: a write still needs a conference. **Membership
 tables only**: `Committee` is not in it and must not be, because an organiser with a grant on MUN XI
 and none on MUN X should not be able to read MUN X's operational data.
+
+### `ORG_REVOCABLE_MODELS`
+
+One model and one operation: `deleteMany` on `ConferenceRole`, filtered through the same
+`{ conference: { organizationId } }` clause.
+
+It exists for one action — removing somebody from the organisation — which is inherently
+organisation-wide, because a person leaving takes their grants on every conference with them. It is
+a separate list rather than a widening of the one above precisely so the narrowness is visible:
+nothing here can create or update across conferences, only revoke.
+
+Added in Stage 7, after the success path of `removeMember` was found to have answered 500 since
+Stage 2. See `07-TRAPS.md` #14.
 
 ---
 
@@ -181,6 +194,18 @@ of nested `cause` — see `07-TRAPS.md` for why all four are needed.
 **`recordAudit(db, params)`** — `src/server/audit.ts`. The `client` parameter is not decoration: an
 audit row for a write that rolled back is worse than none, so pass the transaction client. A
 redaction list replaces sensitive keys at any depth before anything is stored.
+
+**The offline queue** — `src/lib/offline/`. `policy.ts` is pure and holds the rule (two writes, and
+which failures retry rather than drop); `queue.ts` is the Dexie store and the flush loop. Nothing
+outside the attendance and logistics screens may import `sendOrQueue`, and a test greps for that.
+Both queueable writes are idempotent on the server, which is the property that makes them queueable
+at all — not their importance.
+
+**The exporters** — `src/server/exporters/`. `table.ts` is the one shape every writer takes; `csv`,
+`xlsx` and `pdf` are hand-written with no runtime dependency beyond `node:zlib`, because `pdfkit`
+and `exceljs` both break a serverless bundle in ways that only appear in production. Dataset
+assembly lives in `src/server/services/exports.ts`, so authorization runs for a Server Component
+too.
 
 **`assertWithinLimit(org, limit, current)`** — `src/server/limits.ts`. One funnel at the top of
 every create path. **403, not 402** — a 402 with no payment mechanism is a lie. The UI keys on

@@ -14,14 +14,14 @@ Deployed: <https://munopshub.vercel.app>
 Working directory: `~/projects/mun-ops` — **not** the `D:` drive. Small-file reads are ~158× slower
 across the Windows mount.
 
-**Stages 1–6 of 8 are complete, deployed, and green.** Stage 7 is next.
+**Stages 1–7 of 8 are complete and green.** Stage 8 is next.
 
 ## Read these first
 
 The `docs/` folder exists so you do not have to re-derive any of this. Read, in order:
 
 1. `docs/01-CURRENT-STATE.md` — what is built, what is deferred, and the **do not build in v1** list
-2. `docs/02-INVARIANTS.md` — eight rules, the mechanism enforcing each, and the command that proves it
+2. `docs/02-INVARIANTS.md` — ten rules, the mechanism enforcing each, and the command that proves it
 3. `docs/03-ARCHITECTURE.md` — tenancy, context, services, the error contract
 4. `docs/07-TRAPS.md` — every defect found in this build and the lesson from each
 
@@ -51,6 +51,10 @@ State them back before you start, and hold them for the whole build.
 7. **Every migration that adds a table enables RLS.** Supabase serves PostgREST over `public` to
    anyone holding the anon key, and a new table arrives with RLS off.
 8. **Browser env values are read as literal `process.env.NEXT_PUBLIC_FOO`**, never a computed key.
+9. **Every mutating admin route writes an `AuditLog` row.** It declares an `audit:` action, `withApi`
+   throws under Vitest if the row is not written, and a live sweep calls every one of them.
+10. **The offline queue holds exactly two writes** — a logistics request and an attendance check-in.
+    Everything else fails fast. Read `src/lib/offline/policy.ts` before touching any of it.
 
 ## How to work
 
@@ -78,22 +82,31 @@ mun-pg start          # WSL runs no init; the cluster does not survive a reboot
 npm test              # confirm green before changing anything
 ```
 
+The browser end-to-end check for the offline queue is not in `npm test` and does not need to run
+before Stage 8, but it is how invariant 10 is proved:
+
+```bash
+npm run build && node scripts/e2e-offline.mjs
+```
+
 ## Your task
 
-**Build Stage 7 — conference-day operations.** The brief and exit criterion are in
-`docs/09-NEXT-STAGES.md`. In short: attendance check-in, logistics requests, awards, CSV/XLSX/PDF
-exporters, the audit-log viewer, the dashboard, and a Dexie offline queue holding **exactly two
-writes** — a logistics request and an attendance check-in. Everything else fails fast, deliberately.
+**Build Stage 8 — organisation administration, marketing, hardening.** The brief and exit criterion
+are in `docs/09-NEXT-STAGES.md`. In short: organisation settings with branding, the conference
+settings form (service, schema and route all exist — only the form is missing), conference archive
+and a typed-confirmation danger zone, the usage panel from `computeUsage`, ownership-transfer UI,
+CSP and the remaining security headers, and the marketing pages.
 
-Read the comment in `src/app/providers.tsx` about `networkMode: 'always'` before touching anything
-offline-related; it carries the reasoning the exit criterion tests.
+Two things Stage 7 left for you, both recorded in `01-CURRENT-STATE.md`: the organisation-level
+audit log has no screen — rows with a null `conferenceId` are written and unreadable — and the PDF
+exporter cannot render non-Latin scripts.
 
 Exit criterion:
 
-- With devtools set to Offline, a logistics request and an attendance check-in both queue and land
-  in the database on reconnect.
-- Editing a delegate offline fails **immediately** with "you appear to be offline" rather than
-  hanging.
-- A test walks the route manifest and asserts every mutating admin route writes an `AuditLog` row.
+- With the publishable anon key, `curl` against PostgREST for `/rest/v1/Delegate` returns
+  permission-denied while the app works normally. Re-check it for the three tables Stage 7 added.
+- The last OWNER cannot demote or remove themselves. Already true and tested.
+- Lighthouse ≥ 90 on the marketing page and the public registration page.
+- `npm run typecheck` clean, `npm test` green, production deploy from `main`.
 
-Show me the exit criterion output before moving on to Stage 8.
+Show me the exit criterion output before calling it done.

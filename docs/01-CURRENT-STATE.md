@@ -7,7 +7,7 @@ What exists, what does not, and what must not be built.
 | Repository | <https://github.com/abhinavv-21/MUN-Operations-Software> |
 | Deployment | <https://munopshub.vercel.app> |
 | Local path | `~/projects/mun-ops` (**not** the `D:` drive — see `06-ENVIRONMENT.md`) |
-| Stages complete | 1–6 of 8 |
+| Stages complete | 1–7 of 8 |
 
 Numbers drift. `npm test` is the source of truth for the suite, `git log --oneline` for history.
 
@@ -68,6 +68,18 @@ allocations screens.
 *Proved:* eight parallel allocations of one country produce exactly one 201, seven 409s, one row
 and **no 500**; a matrix naming an unknown committee creates no committee.
 
+**Stage 7 — conference-day operations.**
+Attendance, logistics requests, awards, CSV/XLSX/PDF exporters, the audit-log viewer, the conference
+dashboard, a conference sub-navigation, delegate editing, and the Dexie offline queue with its
+service worker, connection pill and update prompt.
+*Proved:* in a real headless Chrome with `Network.emulateNetworkConditions { offline: true }` — the
+same command the devtools Offline checkbox sends — a logistics request and an attendance check-in
+both queue and both land in Postgres on reconnect; a delegate edit fails in **138 ms** with "You
+appear to be offline" rather than hanging; the queue survives a reload while still offline. Reverting
+`networkMode: 'always'` makes the check-in hang and never queue, which is the bug that decision
+exists for. A three-layer manifest test asserts every mutating admin route writes an `AuditLog` row,
+and each layer was confirmed by breaking it.
+
 **Added early, ahead of the specification:** CI running typecheck, lint, tests and build on every
 push (the spec deferred this to Stage 8 — it caught a config bug on its first run), and three
 security headers in `next.config.ts`.
@@ -78,13 +90,21 @@ security headers in `next.config.ts`.
 
 Honest gaps, roughly in the order they hurt.
 
-- **Stage 7 entirely** — attendance, logistics requests, awards, exporters, the audit-log viewer,
-  the dashboard, the offline queue, service worker, connection pill. See `09-NEXT-STAGES.md`.
 - **Stage 8 entirely** — the members screen exists, but org settings, conference archive, the
   danger zone, the usage panel, CSP and the marketing pages do not.
 - **Conference settings form.** `updateConference` and its `PATCH` route exist and are tested;
   dates, venue, fee and deadline can only be set through the API today.
 - **`prisma/seed.ts`.** No seed exists. Test fixtures are built inline.
+- **The organisation-level audit log has no screen.** The viewer is conference-scoped, so rows with
+  a null `conferenceId` — inviting a member, transferring ownership — are written and not readable
+  in the product. They belong on the organisation settings screen in Stage 8.
+- **The PDF exporter cannot render non-Latin scripts.** It uses the standard-14 fonts, which need no
+  font file and therefore cannot break a serverless bundle, but which cover WinAnsi only. A name in
+  Devanagari, Arabic or a CJK script is written as `?`. CSV and XLSX are full UTF-8, which is why the
+  export screen offers three formats and says so on the PDF button.
+- **The service worker only updates when `public/sw.js` changes.** `CACHE_VERSION` is the trigger.
+  A deploy that does not touch that file ships no update prompt — which is safe, because every URL
+  it caches is content-hashed, but it means the prompt is not a deploy notification.
 
 ---
 

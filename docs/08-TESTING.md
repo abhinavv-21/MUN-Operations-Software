@@ -51,6 +51,12 @@ npx vitest run --reporter=verbose     # confirm tests ran rather than skipped
 | `theme.test.ts` | Six seeds including a pale yellow and mid-grey-on-mid-grey; every ground pair clears its ratio; token names present. |
 | `ui.test.ts` | `cn` keeps a text colour beside a named text size. |
 | `client-env.test.ts` | Browser env values are read as literal expressions. Reads the *source*, because nothing at runtime can catch it server-side. |
+| `audit.manifest.test.ts` | Invariant 9, in three layers: every mutating admin route declares an audit action, `withApi` throws under Vitest when a declared one is not written, and a live sweep calls every such route so layer 2 fires on all of them. A fourth test fails if a route exists the sweep never calls. |
+| `attendance.test.ts` | Check-in is idempotent by `(conference, delegate, day)` — the property the offline queue rests on — a replay is audited as unchanged, six concurrent marks make one row and no 500, and a delegate from another conference is 404. |
+| `logistics.test.ts` | A replayed `clientRequestId` returns the original row with the original 201; two requests with no token stay two; resolving requires a note; reopening clears the closure. |
+| `awards.test.ts` | A delegate must sit in the committee giving the award; several delegates may share a verbal mention; a CONTRIBUTOR gets 403 to write and 200 to read. |
+| `exporters.test.ts` | CSV formula injection is neutralised for every prefix a spreadsheet executes; the XLSX is unzipped and read back; the PDF's cross-reference offsets are walked against their objects; `Content-Disposition` cannot inject a header. |
+| `offline.policy.test.ts` | Exactly two writes may be queued, both idempotency mechanisms exist, and only two screens import `sendOrQueue`. |
 
 ---
 
@@ -84,6 +90,32 @@ const response = await POST(request, { params: Promise.resolve({ orgSlug: 'zz-al
 ```
 
 Faster than supertest and covers the same chain.
+
+---
+
+## The one thing that is not in `npm test`
+
+`scripts/e2e-offline.mjs` drives a real headless Chrome over the DevTools Protocol and is run by
+hand:
+
+```bash
+npm run build && node scripts/e2e-offline.mjs
+```
+
+It is out of the suite deliberately. It needs a browser and a live round trip to Supabase, and
+invariant 5 says `npm test` stays green on a laptop with neither. What it proves cannot be proved
+any other way — `Network.emulateNetworkConditions { offline: true }` is the command the devtools
+Offline checkbox sends, and the guarantee is about what the *browser* does.
+
+It uses no dependency: Node's built-in `WebSocket` talks to Chrome directly. It signs in through the
+product's own sign-in form rather than forging a session cookie, opens three tabs — the register,
+the logistics board and the delegate list, as they sit on three devices at a real conference — and
+reads results straight out of Postgres with `psql`, because asking the application whether it saved
+something is asking the wrong witness.
+
+On this machine Chrome needs `libnss3`, `libnspr4` and `libasound2` unpacked rootless into
+`~/.local/chromium-deps`, the same pattern `06-ENVIRONMENT.md` describes for Postgres. The script
+adds that to `LD_LIBRARY_PATH` itself.
 
 ---
 
