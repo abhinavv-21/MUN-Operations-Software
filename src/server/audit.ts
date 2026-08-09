@@ -80,27 +80,45 @@ export interface AuditRecorder {
   record(params: AuditParams, client?: ScopedClient): Promise<void>
 }
 
+/**
+ * Writes one audit row through an already organisation-scoped client.
+ *
+ * Exported separately from the recorder because some services build their own
+ * scoped client — creating an organisation, or accepting an invitation, both
+ * discover their organisation rather than receiving it on `ctx`.
+ */
+export async function recordAudit(
+  db: ScopedClient,
+  params: AuditParams & Omit<AuditContext, 'organizationId'>,
+): Promise<void> {
+  // organizationId is absent because the scoping extension writes it.
+  // conferenceId is present because on this model it is a real field.
+  const data: ScopedCreate<Prisma.AuditLogUncheckedCreateInput, 'organizationId'> = {
+    conferenceId: params.conferenceId ?? null,
+    actorUserId: params.actorUserId ?? null,
+    action: params.action,
+    entityType: params.entityType,
+    entityId: params.entityId ?? null,
+    payloadBefore: redact(params.payloadBefore) as Prisma.InputJsonValue,
+    payloadAfter: redact(params.payloadAfter) as Prisma.InputJsonValue,
+    ip: params.ip ?? null,
+    userAgent: params.userAgent ?? null,
+  }
+
+  await db.auditLog.create({ data: data as Prisma.AuditLogUncheckedCreateInput })
+}
+
 export function createAuditRecorder(db: ScopedClient, context: AuditContext): AuditRecorder {
   const recorder: AuditRecorder = {
     written: false,
     async record(params, client) {
-      const target = client ?? db
-
-      // organizationId is absent because the scoping extension writes it.
-      // conferenceId is present because on this model it is a real field.
-      const data: ScopedCreate<Prisma.AuditLogUncheckedCreateInput, 'organizationId'> = {
-        conferenceId: context.conferenceId ?? null,
-        actorUserId: context.actorUserId ?? null,
-        action: params.action,
-        entityType: params.entityType,
-        entityId: params.entityId ?? null,
-        payloadBefore: redact(params.payloadBefore) as Prisma.InputJsonValue,
-        payloadAfter: redact(params.payloadAfter) as Prisma.InputJsonValue,
-        ip: context.ip ?? null,
-        userAgent: context.userAgent ?? null,
-      }
-
-      await target.auditLog.create({ data: data as Prisma.AuditLogUncheckedCreateInput })
+      await recordAudit(client ?? db, {
+        ...params,
+        conferenceId: context.conferenceId,
+        actorUserId: context.actorUserId,
+        ip: context.ip,
+        userAgent: context.userAgent,
+      })
       recorder.written = true
     },
   }

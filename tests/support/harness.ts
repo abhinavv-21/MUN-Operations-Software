@@ -30,6 +30,7 @@ export function fixtureName(label: string): string {
 export async function resetDatabase(): Promise<void> {
   await unsafeDb.auditLog.deleteMany({})
   await unsafeDb.committee.deleteMany({})
+  await unsafeDb.conferenceRole.deleteMany({})
   await unsafeDb.conference.deleteMany({})
   await unsafeDb.invitation.deleteMany({})
   await unsafeDb.membership.deleteMany({})

@@ -69,6 +69,9 @@ const eslintConfig = defineConfig([
     files: [
       'src/server/db.ts',
       'src/server/ctx.ts',
+      // The complete list of reads that discover a scope rather than operating
+      // inside one. Three functions, each filtered by a caller-supplied key.
+      'src/server/scope-resolution.ts',
       'src/app/api/health/route.ts',
       'prisma/seed.ts',
       'tests/**/*.ts',

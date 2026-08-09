@@ -35,6 +35,18 @@ enum OrgRole {
   MEMBER
 }
 
+/// Per-conference role. This is where the work happens.
+///
+/// Two levels exist because the motivating case is real: the logistics head for
+/// MUN XI should have CONTRIBUTOR on XI and nothing at all on MUN X, which is
+/// finished and whose data should now be frozen. An organisation-only model
+/// cannot express that, and a conference-only model cannot express who is
+/// allowed to create the next conference.
+enum ConferenceRoleName {
+  ADMIN
+  CONTRIBUTOR
+}
+
 enum BillingStatus {
   ACTIVE
   TRIALING
@@ -97,9 +109,34 @@ model User {
   updatedAt DateTime @updatedAt
 
   memberships         Membership[]
-  invitationsSent     Invitation[] @relation("InvitationInvitedBy")
-  invitationsAccepted Invitation[] @relation("InvitationAcceptedBy")
+  conferenceRoles     ConferenceRole[]
+  invitationsSent     Invitation[]     @relation("InvitationInvitedBy")
+  invitationsAccepted Invitation[]     @relation("InvitationAcceptedBy")
   auditLogs           AuditLog[]
+}
+
+/// A grant of one conference to one user.
+///
+/// Carries `conferenceId` and only `conferenceId`, like every other
+/// conference-scoped table. Reading a user's grants across a whole organisation
+/// — which the conference switcher does on every page — goes through the
+/// relation rather than through a denormalised `organizationId` that could
+/// drift out of agreement with the conference it names.
+model ConferenceRole {
+  id           String @id @default(uuid(7))
+  userId       String
+  conferenceId String
+
+  role ConferenceRoleName @default(CONTRIBUTOR)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conferenceId])
+  @@index([conferenceId])
 }
 
 /// Organisation-level role. Coarse on purpose: MEMBER alone grants nothing and
@@ -141,8 +178,9 @@ model Conference {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   committees   Committee[]
+  roles        ConferenceRole[]
   auditLogs    AuditLog[]
 
   /// Scoped to the organisation, so two organisations may both run a

@@ -14,7 +14,7 @@
 
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@/generated/prisma/client.ts'
-import { isOrgModel, isTenantModel } from './models.ts'
+import { isOrgModel, isOrgReachableModel, isTenantModel } from './models.ts'
 
 function createClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL
@@ -71,6 +71,21 @@ export type ScopeColumn = 'conferenceId' | 'organizationId'
  */
 export type ScopedCreate<T, K extends ScopeColumn = 'conferenceId'> = Omit<T, K>
 
+/**
+ * The one place the two views of a create are reconciled.
+ *
+ * Every field except the injected scope column is still checked against
+ * Prisma's generated input type, so a typo in `canManageMembers` is caught. The
+ * cast is confined here rather than repeated as a bare `as` at every call site,
+ * where it would eventually be copied onto something that genuinely was missing
+ * a field.
+ */
+export function scopedCreate<T, K extends ScopeColumn = 'conferenceId'>(
+  data: ScopedCreate<T, K>,
+): T {
+  return data as T
+}
+
 /** The scoped client handed to services as `ctx.db`. */
 export type ScopedClient = ReturnType<typeof scope>
 
@@ -92,6 +107,22 @@ const WHERE_OPERATIONS = new Set([
 /** Operations whose `data` needs the tenant key injected. */
 const DATA_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn'])
 
+/**
+ * The subset of WHERE_OPERATIONS that only reads. An org-reachable model may be
+ * read across an organisation's conferences; writing to one still requires a
+ * conference in scope.
+ */
+const READ_OPERATIONS = new Set([
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'findUnique',
+  'findUniqueOrThrow',
+  'count',
+  'aggregate',
+  'groupBy',
+])
+
 /** `Committee` -> `committee`. Prisma delegates are the camelCase model name. */
 function delegateName(model: string): string {
   return model.charAt(0).toLowerCase() + model.slice(1)
@@ -105,15 +136,33 @@ function delegateName(model: string): string {
  * the matching scope. Returning unfiltered rows in that situation is precisely
  * the bug this module exists to prevent, so it fails loudly instead.
  */
-function scopeKeyFor(model: string, current: Scope): { column: string; value: string } | undefined {
+type ScopeFilter =
+  /** Inject `{ [column]: value }`, overriding whatever the caller passed. */
+  | { kind: 'column'; column: string; value: string }
+  /** Inject `{ conference: { organizationId } }`. Reads only. */
+  | { kind: 'via-conference'; organizationId: string }
+
+function scopeKeyFor(model: string, operation: string, current: Scope): ScopeFilter | undefined {
   if (isTenantModel(model)) {
-    if (!current.conferenceId) {
+    if (current.conferenceId) {
+      return { kind: 'column', column: 'conferenceId', value: current.conferenceId }
+    }
+
+    if (current.organizationId && isOrgReachableModel(model) && READ_OPERATIONS.has(operation)) {
+      return { kind: 'via-conference', organizationId: current.organizationId }
+    }
+
+    if (current.organizationId && isOrgReachableModel(model)) {
       throw new Error(
-        `${model} is conference-scoped and was queried with no conference in scope. ` +
-          `Use ctx.db from a route that resolves a conference.`,
+        `${model} may be read across an organisation but not written to. ` +
+          `Scope to a single conference before ${operation}.`,
       )
     }
-    return { column: 'conferenceId', value: current.conferenceId }
+
+    throw new Error(
+      `${model} is conference-scoped and was queried with no conference in scope. ` +
+        `Use ctx.db from a route that resolves a conference.`,
+    )
   }
 
   if (isOrgModel(model)) {
@@ -123,10 +172,16 @@ function scopeKeyFor(model: string, current: Scope): { column: string; value: st
           `Use ctx.db from a route that resolves an organisation.`,
       )
     }
-    return { column: 'organizationId', value: current.organizationId }
+    return { kind: 'column', column: 'organizationId', value: current.organizationId }
   }
 
   return undefined
+}
+
+function filterClause(filter: ScopeFilter): Record<string, unknown> {
+  return filter.kind === 'column'
+    ? { [filter.column]: filter.value }
+    : { conference: { organizationId: filter.organizationId } }
 }
 
 /**
@@ -147,14 +202,18 @@ export function scope(current: Scope) {
       $allModels: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         async $allOperations({ model, operation, args, query }: any) {
-          const key = model ? scopeKeyFor(model, current) : undefined
-          if (!key) return query(args)
+          const filter = model ? scopeKeyFor(model, operation, current) : undefined
+          if (!filter) return query(args)
 
           if (DATA_OPERATIONS.has(operation)) {
+            // Unreachable for a via-conference filter, which is reads only.
+            if (filter.kind !== 'column') {
+              throw new Error(`${model} cannot be created without a conference in scope.`)
+            }
             const data = args?.data
             const withKey = Array.isArray(data)
-              ? data.map((row: object) => ({ ...row, [key.column]: key.value }))
-              : { ...data, [key.column]: key.value }
+              ? data.map((row: object) => ({ ...row, [filter.column]: filter.value }))
+              : { ...data, [filter.column]: filter.value }
             return query({ ...args, data: withKey })
           }
 
@@ -168,14 +227,14 @@ export function scope(current: Scope) {
             const delegate = (unsafeDb as any)[delegateName(model)]
             return delegate[target]({
               ...args,
-              where: { ...(args?.where ?? {}), [key.column]: key.value },
+              where: { ...(args?.where ?? {}), ...filterClause(filter) },
             })
           }
 
           if (WHERE_OPERATIONS.has(operation)) {
             return query({
               ...args,
-              where: { ...(args?.where ?? {}), [key.column]: key.value },
+              where: { ...(args?.where ?? {}), ...filterClause(filter) },
             })
           }
 

@@ -15,7 +15,29 @@
  * A read on one of these without a conference in scope throws rather than
  * returning every tenant's rows.
  */
-export const TENANT_MODELS = ['Committee'] as const
+export const TENANT_MODELS = ['Committee', 'ConferenceRole'] as const
+
+/**
+ * Conference-scoped models that may also be *read* with only an organisation in
+ * scope, filtered through their `conference` relation.
+ *
+ * This exists for exactly one shape of question: "what can this user reach in
+ * this organisation", which the conference switcher asks on every page and
+ * which has no single conference to be scoped to. Answering it without this
+ * would mean one query per conference.
+ *
+ * Deliberately narrow, for two reasons.
+ *
+ * Reads only. A write still needs a conference in scope, so nothing can be
+ * created or modified across conferences by accident.
+ *
+ * Membership tables only. `Committee` is *not* in here and must not be: an
+ * organiser with a grant on MUN XI and none on MUN X should not be able to read
+ * MUN X's operational data, and keeping operational models hard-bounded to one
+ * conference is what makes that a property of the database rather than a
+ * promise made by a service.
+ */
+export const ORG_REACHABLE_MODELS = ['ConferenceRole'] as const
 
 /**
  * Scoped by `organizationId`. Membership, tenancy and the audit trail.
@@ -46,6 +68,11 @@ export type GlobalModel = (typeof GLOBAL_MODELS)[number]
 const tenantSet: ReadonlySet<string> = new Set(TENANT_MODELS)
 const orgSet: ReadonlySet<string> = new Set(ORG_MODELS)
 const globalSet: ReadonlySet<string> = new Set(GLOBAL_MODELS)
+const orgReachableSet: ReadonlySet<string> = new Set(ORG_REACHABLE_MODELS)
+
+export function isOrgReachableModel(model: string): boolean {
+  return orgReachableSet.has(model)
+}
 
 export function isTenantModel(model: string): boolean {
   return tenantSet.has(model)

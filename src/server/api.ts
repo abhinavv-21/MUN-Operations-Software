@@ -22,9 +22,18 @@ export interface ApiHandlerArgs<P> {
 }
 
 export interface WithApiOptions<P> {
+  /** Defaults to true. Set false for routes a signed-out visitor may reach. */
+  auth?: boolean
   /**
-   * Resolves the tenant scope from the request before the handler runs.
-   * Stage 2 replaces the default with membership resolution from the session.
+   * The route param holding the organisation slug, usually `'orgSlug'`.
+   * Declaring it is what makes a non-member get a 404 rather than data.
+   */
+  orgParam?: Extract<keyof P, string>
+  /** The route param holding the conference id. */
+  conferenceParam?: Extract<keyof P, string>
+  /**
+   * Escape hatch for routes whose scope is not in the path — an invitation
+   * token, for instance, where the organisation is discovered by looking it up.
    */
   resolveScope?: (request: Request, params: P) => Promise<CreateCtxOptions> | CreateCtxOptions
   /**
@@ -79,11 +88,22 @@ export function withApi<P = Record<string, never>>(
 
     try {
       const params = ((await context?.params) ?? {}) as P
+
+      const fromPath: CreateCtxOptions = {
+        requireAuth: options.auth ?? true,
+        organizationSlug: options.orgParam
+          ? String((params as Record<string, unknown>)[options.orgParam])
+          : undefined,
+        conferenceId: options.conferenceParam
+          ? String((params as Record<string, unknown>)[options.conferenceParam])
+          : undefined,
+      }
+
       const scopeOptions = options.resolveScope
         ? await options.resolveScope(request, params)
-        : {}
+        : fromPath
 
-      ctx = createCtx({ ...scopeOptions, request })
+      ctx = await createCtx({ ...fromPath, ...scopeOptions, request })
 
       const response = await handler({ request, params, ctx })
 
