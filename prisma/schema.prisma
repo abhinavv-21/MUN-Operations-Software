@@ -111,9 +111,25 @@ model User {
   /// auth.users: that schema belongs to Supabase, not to our migrations.
   authUserId String @unique
 
-  email     String  @unique
+  email String @unique
+
+  /// Kept as a derived convenience for display and exports. `firstName` and
+  /// `lastName` are what the sign-up form collects, because "split a full name
+  /// on the first space" is wrong for a great many of the people who will use
+  /// this.
   fullName  String?
+  firstName String?
+  lastName  String?
+
+  phone   String?
+  address String?
+
   avatarUrl String?
+
+  /// Set once the profile step has been completed. Google sign-in fills most of
+  /// it from the account, but never phone or address, so the step runs for both
+  /// routes — with fewer blanks for one of them.
+  profileCompletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

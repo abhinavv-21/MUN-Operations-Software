@@ -1,7 +1,7 @@
 /**
  * The reads that discover a scope, rather than operating inside one.
  *
- * There are exactly three, and they exist here rather than in a service because
+ * There are five, and they exist here rather than in a service because
  * each has the same chicken-and-egg shape: you cannot scope a query by the
  * organisation when the point of the query is to work out which organisation
  * you are in. `resolveMembership` cannot use `ctx.db`, because `ctx.db` is
@@ -10,11 +10,15 @@
  * Keeping them in one small module — rather than relaxing the scoping extension
  * so services can do it themselves — means the complete list of unscoped reads
  * in the product is this file, and it is short enough to read in full during a
- * review. Each one is filtered by a key the caller supplies: a user id, or the
- * hash of a secret. None of them can return "everything".
+ * review. All but one are filtered by a key the caller supplies: a user id, a
+ * slug pair, or the hash of a secret. None of them can return "everything".
+ *
+ * The exception is `emailHasAccount`, which exists to serve the two-step
+ * sign-in and is an account-enumeration oracle by construction. It returns a
+ * boolean rather than a row, and its route rate-limits it hard.
  *
  * This module is on the `unsafeDb` allowlist in eslint.config.mjs for that
- * reason. Adding a fourth function here should feel like a decision.
+ * reason. Adding a sixth function here should feel like a decision.
  */
 
 import { unsafeDb } from './db.ts'
@@ -62,17 +66,9 @@ export function listMembershipsForUser(userId: string) {
 }
 
 /**
- * An invitation, by the hash of its token.
- *
- * The token is the scope: holding it is what identifies the organisation. The
- * lookup is by hash rather than by comparison, so an invalid token simply finds
- * nothing and there is no string comparison to time.
- */
-/**
  * A conference by its public address, for the registration page.
  *
- * The fourth and last function here, and it is a scope-discovery read like the
- * others: `/r/lps-mun/mun-xi` is how an anonymous visitor names a conference,
+ * A scope-discovery read like the others: `/r/lps-mun/mun-xi` is how an anonymous visitor names a conference,
  * and there is no membership to scope it by because there is no visitor
  * identity at all.
  *
@@ -108,6 +104,28 @@ export function findPublicConference(organizationSlug: string, conferenceSlug: s
   })
 }
 
+/**
+ * Whether an email already has an account.
+ *
+ * The only function here not filtered by a caller key — which is exactly why it is rate limited at the route and why it returns
+ * a boolean rather than a row. It exists so the sign-in form can ask for a
+ * password or a profile, and it tells the caller nothing else about the person.
+ */
+export async function emailHasAccount(email: string): Promise<boolean> {
+  const user = await unsafeDb.user.findUnique({
+    where: { email: email.toLowerCase() },
+    select: { id: true },
+  })
+  return user !== null
+}
+
+/**
+ * An invitation, by the hash of its token.
+ *
+ * The token is the scope: holding it is what identifies the organisation. The
+ * lookup is by hash rather than by comparison, so an invalid token simply finds
+ * nothing and there is no string comparison to time.
+ */
 export function findInvitationByTokenHash(tokenHash: string) {
   return unsafeDb.invitation.findUnique({
     where: { tokenHash },

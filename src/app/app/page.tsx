@@ -6,8 +6,14 @@ import { Button } from '@/components/ui/Button.tsx'
 import { Card, CardHeader } from '@/components/ui/Card.tsx'
 import { PageHeader } from '@/components/ui/PageHeader.tsx'
 import { EmptyState } from '@/components/ui/States.tsx'
+import { redirect } from 'next/navigation'
 import { pageCtx } from '@/server/page-ctx.ts'
-import { listMyOrganizations } from '@/server/services/organizations.ts'
+import { optionalClaims } from '@/server/auth/session.ts'
+import {
+  createOrganization,
+  listMyOrganizations,
+  suggestSlug,
+} from '@/server/services/organizations.ts'
 import { CreateOrganizationForm } from './CreateOrganizationForm.tsx'
 
 export const metadata: Metadata = { title: 'Your organisations' }
@@ -16,7 +22,35 @@ export default async function AppHomePage() {
   // Called directly, not through fetch. The first paint needs no API round trip
   // and no second copy of the authorization rules.
   const ctx = await pageCtx()
-  const organizations = await listMyOrganizations(ctx)
+  let organizations = await listMyOrganizations(ctx)
+
+  /*
+    Someone who signed up gave us their organisation's name on the way in, so
+    landing them on an empty page and asking for it again is asking twice. The
+    name rides in the token's metadata; this is the first authenticated request
+    that can act on it.
+
+    Only when they belong to nothing. A member invited into an existing
+    organisation has no name in their metadata and must not have one invented.
+  */
+  if (organizations.length === 0) {
+    const claims = await optionalClaims().catch(() => null)
+    const name = claims?.organizationName?.trim()
+
+    if (name) {
+      // Derived from the owner's id rather than the clock: a render must be
+      // pure, and a slug that changes between two renders of the same page is
+      // a different organisation each time.
+      const slug = suggestSlug(name) || `org-${(ctx.user?.id ?? '').replace(/-/g, '').slice(0, 10)}`
+      const created = await createOrganization(ctx, { name, slug }).catch(
+        // A slug collision on the very first screen is not worth a dead end:
+        // fall through and let them choose one below.
+        () => null,
+      )
+      if (created) redirect(`/app/${created.slug}`)
+      organizations = await listMyOrganizations(ctx)
+    }
+  }
 
   return (
     <main className="ground-app min-h-dvh px-4 py-8 md:px-8">

@@ -7,7 +7,12 @@ export interface AppUser {
   authUserId: string
   email: string
   fullName: string | null
+  firstName: string | null
+  lastName: string | null
+  phone: string | null
+  address: string | null
   avatarUrl: string | null
+  profileCompletedAt: Date | null
 }
 
 /**
@@ -36,18 +41,24 @@ export async function getOrCreateUser(claims: AccessTokenClaims): Promise<AppUse
   if (existing) {
     // Names and avatars change at the provider. Written back only when they
     // actually differ, so the common request stays a single read.
-    const fullName = claims.fullName ?? existing.fullName
-    const avatarUrl = claims.avatarUrl ?? existing.avatarUrl
-    const emailChanged = existing.email !== claims.email
-
-    if (emailChanged || fullName !== existing.fullName || avatarUrl !== existing.avatarUrl) {
-      return db.user.update({
-        where: { id: existing.id },
-        data: { email: claims.email, fullName, avatarUrl },
-      })
+    // The provider is the source of truth for what it knows, and our row is the
+    // source of truth for what only we collect. Neither overwrites the other
+    // with a blank.
+    const next = {
+      email: claims.email,
+      fullName: claims.fullName ?? existing.fullName,
+      firstName: claims.firstName ?? existing.firstName,
+      lastName: claims.lastName ?? existing.lastName,
+      phone: claims.phone ?? existing.phone,
+      address: claims.address ?? existing.address,
+      avatarUrl: claims.avatarUrl ?? existing.avatarUrl,
     }
 
-    return existing
+    const changed = (Object.keys(next) as (keyof typeof next)[]).some(
+      (key) => next[key] !== existing[key],
+    )
+
+    return changed ? db.user.update({ where: { id: existing.id }, data: next }) : existing
   }
 
   try {
@@ -56,6 +67,10 @@ export async function getOrCreateUser(claims: AccessTokenClaims): Promise<AppUse
         authUserId: claims.sub,
         email: claims.email,
         fullName: claims.fullName ?? null,
+        firstName: claims.firstName ?? null,
+        lastName: claims.lastName ?? null,
+        phone: claims.phone ?? null,
+        address: claims.address ?? null,
         avatarUrl: claims.avatarUrl ?? null,
       },
     })

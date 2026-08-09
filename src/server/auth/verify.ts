@@ -38,6 +38,12 @@ export interface AccessTokenClaims {
   /** 'google', 'email', … */
   provider?: string
   fullName?: string
+  firstName?: string
+  lastName?: string
+  phone?: string
+  address?: string
+  /** Only present on the first sign-in after sign-up. */
+  organizationName?: string
   avatarUrl?: string
 }
 
@@ -47,6 +53,14 @@ interface SupabaseJwtPayload extends JWTPayload {
   user_metadata?: {
     full_name?: string
     name?: string
+    /** Google returns these; our own sign-up form writes them. */
+    given_name?: string
+    family_name?: string
+    first_name?: string
+    last_name?: string
+    phone?: string
+    address?: string
+    organization_name?: string
     avatar_url?: string
     picture?: string
   }
@@ -78,11 +92,23 @@ export async function verifyAccessToken(token: string): Promise<AccessTokenClaim
 
   const metadata = payload.user_metadata ?? {}
 
+  const firstName = metadata.first_name ?? metadata.given_name
+  const lastName = metadata.last_name ?? metadata.family_name
+  const fullName =
+    metadata.full_name ??
+    metadata.name ??
+    ([firstName, lastName].filter(Boolean).join(' ') || undefined)
+
   return {
     sub: payload.sub,
     email: payload.email.toLowerCase(),
     provider: payload.app_metadata?.provider,
-    fullName: metadata.full_name ?? metadata.name,
+    fullName,
+    firstName,
+    lastName,
+    phone: metadata.phone,
+    address: metadata.address,
+    organizationName: metadata.organization_name,
     avatarUrl: metadata.avatar_url ?? metadata.picture,
   }
 }
