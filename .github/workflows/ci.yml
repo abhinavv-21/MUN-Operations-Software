@@ -1,0 +1,63 @@
+name: CI
+
+# The reference product has no CI at all — its only workflow is a daily pinger,
+# and nothing runs typecheck, tests or lint on a push. That gap is the single
+# cheapest thing to not inherit, so this exists from Stage 1 rather than Stage 8.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mun_ops_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      CI: 'true'
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/mun_ops_test
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/mun_ops_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/mun_ops_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # A clean install is where npm's allowScripts gate bites: without the
+      # approvals committed in package.json, Prisma's engines never install and
+      # `prisma generate` fails with an error that looks nothing like the cause.
+      - run: npm ci
+
+      - run: npx prisma migrate deploy
+      - run: npx prisma generate
+
+      - run: npm run typecheck
+      - run: npm run lint
+
+      # CI is set, so an unreachable database fails here instead of skipping.
+      # A skipped integration suite in CI is a green build that tested nothing.
+      - run: npm test
+
+      - run: npm run build

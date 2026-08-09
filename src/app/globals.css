@@ -1,0 +1,28 @@
+/*
+ * Placeholder.
+ *
+ * Stage 3 replaces this with tokens.css: channel triplets, ground classes and
+ * the Tailwind wiring that makes every colour arrive from the database. There
+ * are deliberately no colours here yet, because a hex committed now is a hex
+ * someone has to find and remove later.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  line-height: 1.5;
+}

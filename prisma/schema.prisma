@@ -1,0 +1,247 @@
+// Schema v1.
+//
+// Two things about this file carry the whole tenancy design, and both are easy
+// to undo by accident.
+//
+// 1. Operational tables carry `conferenceId` and only `conferenceId`. A row that
+//    carried both an organisation and a conference could drift into an
+//    impossible state (org A, conference B), and policing your own
+//    denormalisation is not a job worth inventing. `Conference.organizationId`
+//    is the single hop.
+//
+// 2. Every unique constraint on an operational table is scoped by conference.
+//    A globally unique `Committee.code` means the second conference in an
+//    organisation cannot have a committee called UNSC. The reference product
+//    gets this right for one tenant and wrong for many.
+//
+// Every model added here must also be classified in src/server/models.ts.
+// A test fails until it is.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Connection URLs live in prisma.config.ts, not here. Prisma 7 removed the
+// `url` property from this block: the CLI reads the direct URL from the config
+// file, and the runtime client is handed a driver adapter instead.
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum BillingStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+}
+
+enum ConferenceStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+/// The billing and membership boundary. Unscoped: resolving one is how a
+/// request finds out which tenant it is in.
+model Organization {
+  id   String @id @default(uuid(7))
+  slug String @unique
+  name String
+
+  // Plans are code, in src/server/limits.ts. These four columns are the only
+  // billing state in the database, and `planLimits` is the one that saves you:
+  // a customer with 400 delegates gets a row update, not a deploy.
+  planKey          String        @default("free")
+  planLimits       Json?
+  billingStatus    BillingStatus @default(ACTIVE)
+  stripeCustomerId String?       @unique
+  trialEndsAt      DateTime?
+
+  /// Inherited by conferences that have not set their own.
+  defaultTheme Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  conferences Conference[]
+  invitations Invitation[]
+  auditLogs   AuditLog[]
+}
+
+/// Product profile and authorization. Supabase Auth owns credentials, email
+/// verification, OAuth linkage and session revocation; none of that is here.
+model User {
+  /// Deliberately not the Supabase subject. Keeping our own id means every
+  /// foreign key stays inside a schema Prisma manages, and changing identity
+  /// provider stays possible.
+  id String @id @default(uuid(7))
+
+  /// The Supabase subject, as a plain unique column. No foreign key to
+  /// auth.users: that schema belongs to Supabase, not to our migrations.
+  authUserId String @unique
+
+  email     String  @unique
+  fullName  String?
+  avatarUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships         Membership[]
+  invitationsSent     Invitation[] @relation("InvitationInvitedBy")
+  invitationsAccepted Invitation[] @relation("InvitationAcceptedBy")
+  auditLogs           AuditLog[]
+}
+
+/// Organisation-level role. Coarse on purpose: MEMBER alone grants nothing and
+/// is a container for the per-conference grants added in Stage 2.
+model Membership {
+  id             String @id @default(uuid(7))
+  userId         String
+  organizationId String
+
+  role OrgRole @default(MEMBER)
+
+  /// Deliberately off the role axis, as in the reference. Running the
+  /// conference and deciding who may sign in are different powers, and this one
+  /// is re-read from the database on every request that depends on it.
+  canManageMembers Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+/// The data boundary. Everything operational hangs off one of these.
+model Conference {
+  id             String @id @default(uuid(7))
+  organizationId String
+
+  slug    String
+  name    String
+  edition String?
+
+  status ConferenceStatus @default(DRAFT)
+  theme  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  committees   Committee[]
+  auditLogs    AuditLog[]
+
+  /// Scoped to the organisation, so two organisations may both run a
+  /// conference called `mun-x`.
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+/// An emailed invitation into an organisation.
+model Invitation {
+  id             String @id @default(uuid(7))
+  organizationId String
+
+  /// A hint, not the authority. The token is what grants access, because
+  /// people forward invitations to their real address constantly.
+  email String
+
+  orgRole OrgRole @default(MEMBER)
+
+  /// Per-conference grants to apply on acceptance, shaped by a zod schema in
+  /// the service layer rather than by a column per grant.
+  conferenceGrants Json?
+
+  /// Only the SHA-256 of the token is stored, so this table cannot be read
+  /// back into a working credential. Same reasoning as the reference's
+  /// Session.tokenHash.
+  tokenHash String @unique
+
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  invitedById      String
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitationInvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+  acceptedBy   User?        @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+/// Append-only trail.
+///
+/// This is the one table that legitimately carries both ids. An organisation
+/// audit — inviting a member, transferring ownership — has no conference to
+/// belong to, so `conferenceId` is nullable and `organizationId` is not. It is
+/// classified as an organisation-scoped model, and the single write path in
+/// src/server/audit.ts is what keeps the pair consistent.
+model AuditLog {
+  id             String  @id @default(uuid(7))
+  organizationId String
+  conferenceId   String?
+
+  /// Null for actions taken by the system rather than a person.
+  actorUserId String?
+
+  action     String
+  entityType String
+  entityId   String?
+
+  payloadBefore Json?
+  payloadAfter  Json?
+
+  ip        String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conference   Conference?  @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([conferenceId, createdAt])
+  @@index([entityType, entityId])
+}
+
+/// The one tenant-scoped model in schema v1. It exists so the scoping
+/// guarantee has something to be proved against before there is a feature to
+/// leak.
+model Committee {
+  id           String @id @default(uuid(7))
+  conferenceId String
+
+  code String
+  name String
+
+  /// Null means unbounded. Seat capacity is enforced inside a serializable
+  /// transaction from Stage 6, not by a constraint.
+  seats Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([conferenceId, code])
+  @@unique([conferenceId, name])
+  @@index([conferenceId])
+}

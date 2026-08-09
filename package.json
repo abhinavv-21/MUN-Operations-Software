@@ -1,0 +1,48 @@
+{
+  "name": "mun-operations-software",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev-preflight.mjs && next dev",
+    "build": "prisma generate && next build",
+    "vercel-build": "prisma migrate deploy && prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:reset": "prisma migrate reset",
+    "db:studio": "prisma studio",
+    "db:deploy:remote": "node scripts/migrate-remote.mjs"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "next": "16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv": "^17.2.4",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.0",
+    "prisma": "^7.9.1",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  },
+  "allowScripts": {
+    "prisma@7.9.1": true,
+    "@prisma/engines@7.9.1": true,
+    "unrs-resolver@1.12.2": true
+  }
+}

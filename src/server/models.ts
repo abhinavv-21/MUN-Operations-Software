@@ -1,0 +1,67 @@
+/**
+ * Every model in the schema is classified here, into exactly one bucket.
+ *
+ * This file is the reason the tenancy guarantee survives contact with a schema
+ * that keeps growing. The scoping extension alone is not enough: a model added
+ * in six months would simply not be in any list, and would be silently
+ * unscoped forever. `models.coverage.test.ts` reads the generated client's
+ * model registry and fails until every model appears here, so adding a table
+ * without deciding how it is scoped breaks CI rather than production.
+ */
+
+/**
+ * Scoped by `conferenceId`. Everything operational lives here.
+ *
+ * A read on one of these without a conference in scope throws rather than
+ * returning every tenant's rows.
+ */
+export const TENANT_MODELS = ['Committee'] as const
+
+/**
+ * Scoped by `organizationId`. Membership, tenancy and the audit trail.
+ *
+ * `Conference` belongs here rather than in TENANT_MODELS because it *is* the
+ * conference boundary; scoping it by itself is circular. `AuditLog` belongs
+ * here because an organisation-level action — inviting a member, transferring
+ * ownership — has no conference to be filed under.
+ */
+export const ORG_MODELS = ['Membership', 'Conference', 'Invitation', 'AuditLog'] as const
+
+/**
+ * Deliberately unscoped, and each one needs a reason.
+ *
+ * `Organization`: resolving one is how a request discovers its tenant, so
+ * scoping it by itself is circular. Access is gated by membership in
+ * `createCtx`, not by row filtering.
+ *
+ * `User`: identity spans organisations. One person may belong to several, and
+ * the same account must work in all of them.
+ */
+export const GLOBAL_MODELS = ['Organization', 'User'] as const
+
+export type TenantModel = (typeof TENANT_MODELS)[number]
+export type OrgModel = (typeof ORG_MODELS)[number]
+export type GlobalModel = (typeof GLOBAL_MODELS)[number]
+
+const tenantSet: ReadonlySet<string> = new Set(TENANT_MODELS)
+const orgSet: ReadonlySet<string> = new Set(ORG_MODELS)
+const globalSet: ReadonlySet<string> = new Set(GLOBAL_MODELS)
+
+export function isTenantModel(model: string): boolean {
+  return tenantSet.has(model)
+}
+
+export function isOrgModel(model: string): boolean {
+  return orgSet.has(model)
+}
+
+export function isGlobalModel(model: string): boolean {
+  return globalSet.has(model)
+}
+
+/** Every classified model name, for the coverage test. */
+export const CLASSIFIED_MODELS: readonly string[] = [
+  ...TENANT_MODELS,
+  ...ORG_MODELS,
+  ...GLOBAL_MODELS,
+]
