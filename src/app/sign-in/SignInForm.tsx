@@ -70,11 +70,20 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
     setBusy(true)
     setError(null)
 
-    const { error: signInError } = await supabaseBrowser().auth.signInWithPassword({
-      email,
-      password,
-    })
-    setBusy(false)
+    let signInError: { message: string } | null = null
+    try {
+      ;({ error: signInError } = await supabaseBrowser().auth.signInWithPassword({
+        email,
+        password,
+      }))
+    } catch (caught) {
+      setError(errorMessage(caught, 'Could not sign in. Try again in a moment.'))
+      return
+    } finally {
+      // In a finally, not after the await. A throw before this line is what
+      // left the button spinning forever with nothing to read.
+      setBusy(false)
+    }
 
     if (signInError) {
       // Deliberately does not distinguish a wrong password from an unconfirmed
@@ -97,7 +106,9 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
     setBusy(true)
     setError(null)
 
-    const { error: signUpError } = await supabaseBrowser().auth.signUp({
+    let signUpError: { message: string } | null = null
+    try {
+      ;({ error: signUpError } = await supabaseBrowser().auth.signUp({
       email,
       password,
       options: {
@@ -113,8 +124,13 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
           organization_name: organizationName,
         },
       },
-    })
-    setBusy(false)
+      }))
+    } catch (caught) {
+      setError(errorMessage(caught, 'Could not create that account. Try again in a moment.'))
+      return
+    } finally {
+      setBusy(false)
+    }
 
     if (signUpError) {
       setError(signUpError.message || 'Could not create that account.')
@@ -127,12 +143,21 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
   async function signInWithGoogle() {
     setBusy(true)
     setError(null)
-    const { error: oauthError } = await supabaseBrowser().auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: callback() },
-    })
-    if (oauthError) {
-      setError('Google sign-in is unavailable right now.')
+
+    try {
+      const { error: oauthError } = await supabaseBrowser().auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: callback() },
+      })
+      // On success the browser is already navigating away, so the spinner is
+      // left running deliberately — clearing it would flash the idle button
+      // during the redirect.
+      if (oauthError) {
+        setError('Google sign-in is unavailable right now. Use an email address instead.')
+        setBusy(false)
+      }
+    } catch (caught) {
+      setError(errorMessage(caught, 'Google sign-in is unavailable right now.'))
       setBusy(false)
     }
   }
