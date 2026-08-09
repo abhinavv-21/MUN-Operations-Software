@@ -208,6 +208,7 @@ model Conference {
   roles         ConferenceRole[]
   registrations Registration[]
   delegates     Delegate[]
+  assignments   Assignment[]
   integrations  ConferenceIntegration[]
   auditLogs     AuditLog[]
 
@@ -305,8 +306,9 @@ model Committee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  conference Conference         @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
-  countries  CommitteeCountry[]
+  conference  Conference         @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  countries   CommitteeCountry[]
+  assignments Assignment[]
 
   /// Scoped by conference, not global. A society running MUN X and MUN XI must
   /// be able to have a UNSC in both — the reference product's global uniqueness
@@ -425,9 +427,49 @@ model Delegate {
 
   conference   Conference    @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
   registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  assignment   Assignment?
 
   @@unique([conferenceId, email])
   @@index([conferenceId])
+}
+
+/// One delegate holding one country in one committee.
+///
+/// Two unique constraints, and both are load-bearing:
+///
+/// `[conferenceId, committeeId, country]` — two delegates cannot hold the same
+/// country in the same committee. This is the guarantee; the serializable
+/// transaction around allocation is what turns a race into a clean 409 rather
+/// than a crash. You need both, and neither substitutes for the other.
+///
+/// `[conferenceId, delegateId]` — one delegate holds one seat. Someone in two
+/// committees at once cannot be in either of them.
+model Assignment {
+  id           String @id @default(uuid(7))
+  conferenceId String
+  committeeId  String
+
+  /// Unique on the field, not as `@@unique([conferenceId, delegateId])`.
+  ///
+  /// Prisma requires a field-level unique to back the one-to-one, and here the
+  /// two are equivalent: a delegate belongs to exactly one conference and never
+  /// moves, so "one seat per delegate per conference" and "one seat per
+  /// delegate" describe the same set of rows. This is the stronger of the two
+  /// and costs one index rather than two.
+  delegateId String @unique
+
+  country String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  committee  Committee  @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  delegate   Delegate   @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+
+  @@unique([conferenceId, committeeId, country])
+  @@index([conferenceId])
+  @@index([committeeId])
 }
 
 /// Per-conference integration configuration.

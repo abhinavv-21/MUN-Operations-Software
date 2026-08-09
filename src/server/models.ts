@@ -22,6 +22,7 @@ export const TENANT_MODELS = [
   'Registration',
   'Delegate',
   'ConferenceIntegration',
+  'Assignment',
 ] as const
 
 /**

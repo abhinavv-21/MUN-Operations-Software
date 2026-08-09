@@ -13,16 +13,47 @@
  */
 
 import type { ScopedClient } from './db.ts'
+import { ApiError } from './errors.ts'
 
-/** Postgres write conflict / could not serialize access. */
+/**
+ * Postgres write conflict / could not serialize access.
+ *
+ * Prisma reports this as `P2034` through its own engine. Through a **driver
+ * adapter** — which is how Prisma 7 talks to Postgres here — the same failure
+ * arrives as a `DriverAdapterError: TransactionWriteConflict` wrapped in a
+ * `PrismaClientKnownRequestError`, and matching only on `P2034` misses it
+ * entirely.
+ *
+ * The consequence is not subtle: every retryable conflict became an unhandled
+ * 500. Two organisers allocating at the same moment would each have seen the
+ * product break rather than one of them seeing a clean conflict. Found by the
+ * capacity race test, which is exactly what it is for.
+ */
 const SERIALIZATION_FAILURE = 'P2034'
 
+/** Postgres SQLSTATE for serialization_failure, in case a driver surfaces it raw. */
+const SQLSTATE_SERIALIZATION_FAILURE = '40001'
+
 function isSerializationFailure(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === SERIALIZATION_FAILURE
-  )
+  if (typeof error !== 'object' || error === null) return false
+
+  const candidate = error as { code?: unknown; message?: unknown; cause?: unknown }
+  if (candidate.code === SERIALIZATION_FAILURE) return true
+  if (candidate.code === SQLSTATE_SERIALIZATION_FAILURE) return true
+
+  const message = typeof candidate.message === 'string' ? candidate.message : ''
+  if (
+    message.includes('TransactionWriteConflict') ||
+    message.includes('could not serialize access') ||
+    message.includes('deadlock detected')
+  ) {
+    return true
+  }
+
+  // The adapter nests the real failure, so unwrap one level.
+  return candidate.cause !== undefined && candidate.cause !== error
+    ? isSerializationFailure(candidate.cause)
+    : false
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -52,8 +83,22 @@ export async function runSerializable<T>(
     } catch (error) {
       if (!isSerializationFailure(error)) throw error
       lastError = error
-      if (attempt < attempts) await sleep(25 * attempt)
+      // Backoff grows with the attempt, and is jittered so that N callers that
+      // collided once do not all wake at the same moment and collide again.
+      if (attempt < attempts) await sleep(25 * attempt + Math.floor(Math.random() * 25))
     }
+  }
+
+  /*
+    Every attempt lost the race. That is a conflict, not a server fault: another
+    organiser reached the same seat first, repeatedly. Surfacing the raw driver
+    error would answer 500 and tell the operator the product is broken, when the
+    correct thing for them to do is look at the row and try again.
+  */
+  if (isSerializationFailure(lastError)) {
+    throw ApiError.conflict(
+      'Someone else changed this at the same moment. Check the current state and try again.',
+    )
   }
 
   throw lastError
