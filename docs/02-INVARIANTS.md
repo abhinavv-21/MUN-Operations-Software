@@ -1,12 +1,13 @@
 # Invariants
 
-Ten rules. Each has a **mechanism** that enforces it and a **command** that proves it.
+Eleven rules. Each has a **mechanism** that enforces it and a **command** that proves it.
 
 They are listed with mechanisms because a rule with no mechanism is a preference, and preferences
 decay. Five came from the original specification. Three were added during Stages 1–6, each after a
-defect the original five did not catch, and two more in Stage 7 — one after a route was found to
-have never written its audit row, one because the offline rule is a product decision that a comment
-alone cannot hold.
+defect the original five did not catch; two in Stage 7 — one after a route was found never to have
+written its audit row, one because the offline rule is a product decision a comment cannot hold; and
+one in Stage 8, after a content security policy passed every server-side check while leaving three
+pages painted and dead.
 
 ---
 
@@ -222,6 +223,35 @@ queueing.
 
 ---
 
+## 11. The content security policy is verified in a browser — *added in Stage 8*
+
+**A CSP is invisible to every check that runs on the server.** Typecheck, lint, the whole suite and
+the production build all pass with a policy that blocks the application's own bootstrap, because
+none of them is a browser. That is the same family as invariant 8.
+
+The policy itself: a **per-request nonce** with `'strict-dynamic'`, no `'unsafe-inline'` for scripts,
+and `style-src-elem` nonced with `'unsafe-inline'` confined to `style-src-attr` — React writes style
+attributes for the meters and a nonce cannot cover an attribute.
+
+*Mechanism:* `src/lib/csp.ts` builds it, `src/proxy.ts` sets it on the request as well as the
+response — that is how Next finds the nonce — and `scripts/csp-check.mjs` loads every page type in a
+real headless Chrome, listens for `securitypolicyviolation`, and **asks whether React hydrated**. A
+blocked bootstrap renders the server HTML perfectly and responds to nothing, so "the page looks
+right" proves nothing at all.
+
+**A nonce forces dynamic rendering.** Nothing in the product is statically prerendered any more, and
+that is the accepted cost — measured, not assumed: the marketing pages still score 100 for
+performance.
+
+*Proof:*
+```bash
+npm run build && node scripts/csp-check.mjs
+# and, for a page that needs a fixture:
+CSP_EXTRA_PATHS=/r/your-org/your-conference node scripts/csp-check.mjs
+```
+
+---
+
 ## Running all of it
 
 ```bash
@@ -235,6 +265,7 @@ have:
 
 ```bash
 npm run build && node scripts/e2e-offline.mjs   # invariant 10, in a real browser
+npm run build && node scripts/csp-check.mjs     # invariant 11, in a real browser
 ```
 
 See `08-TESTING.md`.

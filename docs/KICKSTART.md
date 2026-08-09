@@ -14,14 +14,15 @@ Deployed: <https://munopshub.vercel.app>
 Working directory: `~/projects/mun-ops` — **not** the `D:` drive. Small-file reads are ~158× slower
 across the Windows mount.
 
-**Stages 1–7 of 8 are complete and green.** Stage 8 is next.
+**All eight stages are complete, deployed and green.** v1 is feature-complete against the
+original specification.
 
 ## Read these first
 
 The `docs/` folder exists so you do not have to re-derive any of this. Read, in order:
 
 1. `docs/01-CURRENT-STATE.md` — what is built, what is deferred, and the **do not build in v1** list
-2. `docs/02-INVARIANTS.md` — ten rules, the mechanism enforcing each, and the command that proves it
+2. `docs/02-INVARIANTS.md` — eleven rules, the mechanism enforcing each, and the command that proves it
 3. `docs/03-ARCHITECTURE.md` — tenancy, context, services, the error contract
 4. `docs/07-TRAPS.md` — every defect found in this build and the lesson from each
 
@@ -55,6 +56,8 @@ State them back before you start, and hold them for the whole build.
    throws under Vitest if the row is not written, and a live sweep calls every one of them.
 10. **The offline queue holds exactly two writes** — a logistics request and an attendance check-in.
     Everything else fails fast. Read `src/lib/offline/policy.ts` before touching any of it.
+11. **The CSP is verified in a real browser**, because no server-side check can see it. Every inline
+    `<style>` needs the nonce; the policy carries no `'unsafe-inline'` for scripts.
 
 ## How to work
 
@@ -91,22 +94,26 @@ npm run build && node scripts/e2e-offline.mjs
 
 ## Your task
 
-**Build Stage 8 — organisation administration, marketing, hardening.** The brief and exit criterion
-are in `docs/09-NEXT-STAGES.md`. In short: organisation settings with branding, the conference
-settings form (service, schema and route all exist — only the form is missing), conference archive
-and a typed-confirmation danger zone, the usage panel from `computeUsage`, ownership-transfer UI,
-CSP and the remaining security headers, and the marketing pages.
+Ask what is needed. **All eight stages are done**, so there is no next stage to start — and the
+single most likely way to damage this product now is to helpfully build something on the
+**do not build in v1** list in `01-CURRENT-STATE.md`. Read that list before proposing anything.
 
-Two things Stage 7 left for you, both recorded in `01-CURRENT-STATE.md`: the organisation-level
-audit log has no screen — rows with a null `conferenceId` are written and unreadable — and the PDF
-exporter cannot render non-Latin scripts.
+`docs/09-NEXT-STAGES.md` ends with four things that are genuinely worth doing and none of which are
+urgent: a seed script, logo upload, an embedded PDF font, and somewhere real for CSP reports to go.
 
-Exit criterion:
+Whatever the work turns out to be:
 
-- With the publishable anon key, `curl` against PostgREST for `/rest/v1/Delegate` returns
-  permission-denied while the app works normally. Re-check it for the three tables Stage 7 added.
-- The last OWNER cannot demote or remove themselves. Already true and tested.
-- Lighthouse ≥ 90 on the marketing page and the public registration page.
-- `npm run typecheck` clean, `npm test` green, production deploy from `main`.
+```bash
+mun-pg start
+npm run typecheck && npm run lint && npm test && npm run build
+```
 
-Show me the exit criterion output before calling it done.
+and, if it touches anything the browser decides — the CSP, the offline queue, an inline `<style>`:
+
+```bash
+npm run build && node scripts/e2e-offline.mjs
+npm run build && node scripts/csp-check.mjs
+```
+
+Neither is in `npm test`, both need a browser, and both catch a class of failure that every
+server-side check in this repository is blind to.

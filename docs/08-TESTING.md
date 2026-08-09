@@ -57,6 +57,8 @@ npx vitest run --reporter=verbose     # confirm tests ran rather than skipped
 | `awards.test.ts` | A delegate must sit in the committee giving the award; several delegates may share a verbal mention; a CONTRIBUTOR gets 403 to write and 200 to read. |
 | `exporters.test.ts` | CSV formula injection is neutralised for every prefix a spreadsheet executes; the XLSX is unzipped and read back; the PDF's cross-reference offsets are walked against their objects; `Content-Disposition` cannot inject a header. |
 | `offline.policy.test.ts` | Exactly two writes may be queued, both idempotency mechanisms exist, and only two screens import `sendOrQueue`. |
+| `organization-settings.test.ts` | Renaming and moving the address, with the old slug recoverable from the audit row; presets free and custom palettes gated on `customBranding`; 403-not-402 with `details.limit`; a plain member refused with 403 and a stranger with 404. |
+| `conference-deletion.test.ts` | The typed confirmation checked **in the service**, not the dialog; the cascade reaching every conference-scoped table and no further; and the audit trail surviving the conference it describes. |
 
 ---
 
@@ -93,14 +95,23 @@ Faster than supertest and covers the same chain.
 
 ---
 
-## The one thing that is not in `npm test`
+## The two things that are not in `npm test`
 
-`scripts/e2e-offline.mjs` drives a real headless Chrome over the DevTools Protocol and is run by
-hand:
+Both drive a real headless Chrome over the DevTools Protocol, and both are run by hand:
 
 ```bash
-npm run build && node scripts/e2e-offline.mjs
+npm run build && node scripts/e2e-offline.mjs   # the offline queue
+npm run build && node scripts/csp-check.mjs     # the content security policy
 ```
+
+`csp-check.mjs` exists for the same reason as `client-env.test.ts`: a whole class of bug is
+invisible to server-side checks. It listens for `securitypolicyviolation` and, critically, asks
+whether React hydrated — a page whose bootstrap the policy blocked renders perfectly and does
+nothing. Pass `CSP_EXTRA_PATHS=/r/org/conf` to include a page that needs a fixture.
+
+**Never let either of them measure a server they did not start.** Both refuse to run when something
+already answers on their port, after a leaked `next start` made a reverted fix look green once and a
+fixed one look broken later — traps 15 and 17.
 
 It is out of the suite deliberately. It needs a browser and a live round trip to Supabase, and
 invariant 5 says `npm test` stays green on a laptop with neither. What it proves cannot be proved
@@ -114,8 +125,21 @@ reads results straight out of Postgres with `psql`, because asking the applicati
 something is asking the wrong witness.
 
 On this machine Chrome needs `libnss3`, `libnspr4` and `libasound2` unpacked rootless into
-`~/.local/chromium-deps`, the same pattern `06-ENVIRONMENT.md` describes for Postgres. The script
-adds that to `LD_LIBRARY_PATH` itself.
+`~/.local/chromium-deps`, the same pattern `06-ENVIRONMENT.md` describes for Postgres. Both scripts
+add that to `LD_LIBRARY_PATH` themselves.
+
+### Lighthouse
+
+Not a script in the repository, because it is run once per stage rather than per change:
+
+```bash
+npx lighthouse@12 http://127.0.0.1:3220/ --preset=desktop \
+  --chrome-flags="--headless=new --no-sandbox"
+```
+
+Run it from **outside** the repository. `chrome-launcher` treats WSL as Windows and builds its temp
+directory from `LOCALAPPDATA`, which otherwise creates a literal `C:\Users\…` directory in the
+project root — and the next Turbopack build then fails with an unrelated-looking CSS error.
 
 ---
 

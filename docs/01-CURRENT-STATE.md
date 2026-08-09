@@ -7,7 +7,7 @@ What exists, what does not, and what must not be built.
 | Repository | <https://github.com/abhinavv-21/MUN-Operations-Software> |
 | Deployment | <https://munopshub.vercel.app> |
 | Local path | `~/projects/mun-ops` (**not** the `D:` drive — see `06-ENVIRONMENT.md`) |
-| Stages complete | 1–7 of 8 |
+| Stages complete | 1–8 of 8 |
 
 Numbers drift. `npm test` is the source of truth for the suite, `git log --oneline` for history.
 
@@ -80,6 +80,17 @@ appear to be offline" rather than hanging; the queue survives a reload while sti
 exists for. A three-layer manifest test asserts every mutating admin route writes an `AuditLog` row,
 and each layer was confirmed by breaking it.
 
+**Stage 8 — organisation administration, marketing, hardening.**
+Organisation settings with branding and a live preview, the usage panel, the conference settings
+form, a typed-confirmation danger zone with archive and delete, the organisation-wide audit log,
+ownership-transfer UI, inline committee seat editing, a nonce-based CSP with the remaining security
+headers, and two marketing pages.
+*Proved:* PostgREST answers `42501` for all three Stage 7 tables against the live Supabase project
+while the app works normally; the last OWNER still cannot demote or remove themselves; Lighthouse
+scores **100/100/100/100** on the landing page and how-it-works and **100/100/100/90** on the public
+registration page; the CSP holds in a real headless Chrome across six page types with React
+hydrating on every one.
+
 **Added early, ahead of the specification:** CI running typecheck, lint, tests and build on every
 push (the spec deferred this to Stage 8 — it caught a config bug on its first run), and three
 security headers in `next.config.ts`.
@@ -90,14 +101,13 @@ security headers in `next.config.ts`.
 
 Honest gaps, roughly in the order they hurt.
 
-- **Stage 8 entirely** — the members screen exists, but org settings, conference archive, the
-  danger zone, the usage panel, CSP and the marketing pages do not.
-- **Conference settings form.** `updateConference` and its `PATCH` route exist and are tested;
-  dates, venue, fee and deadline can only be set through the API today.
 - **`prisma/seed.ts`.** No seed exists. Test fixtures are built inline.
-- **The organisation-level audit log has no screen.** The viewer is conference-scoped, so rows with
-  a null `conferenceId` — inviting a member, transferring ownership — are written and not readable
-  in the product. They belong on the organisation settings screen in Stage 8.
+- **No logo upload.** `Theme.logoUrl` exists in the schema and nothing sets it: uploading one needs
+  an organisation-scoped presigned endpoint, and the only one built is for payment proofs on the
+  public form. The branding screen therefore offers colours, corners and a typeface, and no crest.
+- **Deleting an organisation is not possible in the product.** Conferences can be archived or
+  deleted; closing the whole account is an email. Deliberate for v1 — the failure mode of getting it
+  wrong is losing every conference a society has ever run.
 - **The PDF exporter cannot render non-Latin scripts.** It uses the standard-14 fonts, which need no
   font file and therefore cannot break a serverless bundle, but which cover WinAnsi only. A name in
   Devanagari, Arabic or a CJK script is written as `?`. CSV and XLSX are full UTF-8, which is why the
@@ -105,6 +115,11 @@ Honest gaps, roughly in the order they hurt.
 - **The service worker only updates when `public/sw.js` changes.** `CACHE_VERSION` is the trigger.
   A deploy that does not touch that file ships no update prompt — which is safe, because every URL
   it caches is content-hashed, but it means the prompt is not a deploy notification.
+- **Nothing is statically prerendered any more.** The CSP nonce is per request and the root layout
+  reads it, so every route renders on demand. Measured before accepting it: the marketing pages
+  still score 100 for performance. The trade is written up in `src/lib/csp.ts`.
+- **No dark mode, and no `prefers-color-scheme` handling.** Still deliberate, still purely additive
+  later because of the ground-class model.
 
 ---
 

@@ -1,9 +1,11 @@
-# Next stages
+# Stages 7 and 8
 
-Stages 7 and 8, restated from the original specification with what this build already did.
+**All eight stages are complete.** This is the record of what the last two built and why, kept
+because the decisions in them are the ones a later session is most likely to undo by accident.
 
-**Every stage ends deployable.** Do not start one until the previous exit criterion passes, and show
-the exit criterion output before moving on.
+For what to do next, see the bottom of this file and the **do not build in v1** list in
+`01-CURRENT-STATE.md` — which is still the list, and is still what a fresh session will helpfully
+start building.
 
 ---
 
@@ -66,36 +68,63 @@ is `npx vitest run tests/audit.manifest.test.ts`.
 
 ---
 
-## Stage 8 — organisation administration, marketing, hardening
+## Stage 8 — organisation administration, marketing, hardening — **complete**
 
 An organiser runs their organisation without emailing you.
 
-### Build
+### What landed
 
-- The members screen — **already built**: invite, role change, remove, last-owner protection.
-  Ownership transfer has a service and a route but no UI control. (Removal only started working in
-  Stage 7 — `07-TRAPS.md` #14.)
-- Organisation settings, including branding — the theme service and schema exist; there is no form.
-- **Conference settings** — dates, venue, fee, deadline, status, theme. `updateConference` and its
-  `PATCH` route exist and are tested; only the form is missing. Arguably belongs earlier.
-- Conference archive and a typed-confirmation danger zone.
-- A usage panel from `computeUsage` — **already written** in `src/server/limits.ts`, unused.
-- CSP and the remaining security headers in `next.config.ts` — three are already set.
-- `EXPOSE_ERROR_DETAILS` failing closed — **already done and tested**.
-- Marketing pages using the ground classes.
-- **CI running typecheck, test and lint on every PR — already done in Stage 1.** It caught a config
-  bug on its first run.
+- **Organisation settings** — name, address, branding with a live preview derived by the same
+  `buildThemeVars` the server uses, and the usage panel from `computeUsage`.
+- **The organisation-wide audit log**, which had to exist once conferences could be deleted.
+- **Conference settings** — dates, venue, fee, deadline, status — and a **danger zone** with archive
+  (reversible) and delete (typed confirmation, checked in the service).
+- **Ownership transfer UI**, calling the endpoint that had existed since Stage 2 with nothing
+  reaching it.
+- **Inline committee seat editing**, likewise: `updateCommittee` was unreachable from the product,
+  which meant seat capacity and the serializable allocation behind it could only be set by API.
+- **A nonce-based CSP** and five more security headers.
+- **Two marketing pages**, `/` and `/how-it-works`, in a route group.
 
-### Exit criterion
+### Decisions worth knowing before changing any of it
 
-- With the publishable anon key, `curl` against PostgREST for `/rest/v1/Delegate` returns
-  permission-denied while the app works normally. **Already true and verified.** Stage 7 added
-  `AttendanceRecord`, `LogisticsRequest` and `Award`; all three carry RLS, asserted by
-  `tests/security.rls.test.ts`, but the live PostgREST check should be repeated against Supabase
-  once they are deployed.
-- The last OWNER cannot demote or remove themselves. **Already true and tested.**
-- Lighthouse ≥ 90 on the marketing page and the public registration page.
-- `npm run typecheck` clean, `npm test` green, production deploy from `main`.
+**`customBranding` is now enforced.** It had sat in the plan table since Stage 1 with nothing reading
+it, which made it a claim the product did not keep. Presets are free; changing one of a preset's
+colours is the gated part. Lifted by a row update on `planLimits`, like every other limit.
+
+**`AuditLog.conferenceId` became `SetNull`.** Under the `Cascade` it had, deleting a conference
+destroyed every row recording what had been done to it — including the row recording the deletion.
+That made "the audit log is the answer to *I deleted it by mistake*" false at the one moment it
+mattered. Proven by putting the cascade back and watching the test go red.
+
+**The CSP nonce means nothing is statically prerendered.** Accepted after measuring, not before. See
+invariant 11 and trap 16.
+
+**Slug changes are allowed**, with a warning naming exactly what breaks and an audit row carrying the
+old value. The alternative — a typo at sign-up being permanent — is the kind of thing that generates
+the email this stage exists to prevent.
+
+### Exit criterion — met
+
+```
+PostgREST with the publishable anon key, against the live project:
+  AttendanceRecord   -> 42501      LogisticsRequest   -> 42501
+  Award              -> 42501      Delegate           -> 42501   (control)
+
+The last OWNER cannot demote or remove themselves        — tests/membership.test.ts
+Lighthouse, desktop preset:
+  landing          perf 100  a11y 100  best-practices 100  seo 100
+  how-it-works     perf 100  a11y 100  best-practices 100  seo 100
+  registration     perf 100  a11y 100  best-practices 100  seo  90
+
+npm run typecheck   clean
+npm test            243 passing, 21 files
+npm run build       clean
+```
+
+The registration page's SEO 90 is a single audit — `meta-description` — and the tag **is** served:
+`curl` shows it in the initial HTML. It is an artefact of Lighthouse reading the rendered DOM while
+Next streams metadata, not a missing tag.
 
 ---
 
@@ -103,20 +132,37 @@ An organiser runs their organisation without emailing you.
 
 | Gap | Where it stands |
 | --- | --- |
-| Conference settings form | Service, schema, route and validation all exist and are tested |
-| Organisation-level audit viewer | The conference viewer exists; rows with a null `conferenceId` have no screen |
 | PDF in non-Latin scripts | Standard-14 fonts only, so `?` for Devanagari and CJK. Needs an embedded font subset |
-| Ownership transfer UI | `POST /api/orgs/[orgSlug]/transfer-ownership` exists; no control calls it |
-| Committee seat editing | `updateCommittee` exists; the UI only creates and deletes |
+| Logo upload | `Theme.logoUrl` exists and nothing sets it. Needs an organisation-scoped presigned endpoint |
+| Deleting an organisation | Conferences can go; closing an account is an email. Deliberate for v1 |
 | `prisma/seed.ts` | Does not exist. Fixtures are built inline in tests |
 | Product name | One constant in `src/lib/product.ts`. Renaming is a one-line change — candidates were **Placard**, **Dais**, **Quorum** |
 
 ---
 
-## Before starting either stage
+## What is worth doing next
+
+v1 is feature-complete against the original specification. Nothing below is required to run a
+conference, and the **do not build in v1** list still applies to all of it.
+
+In the order the product would feel it:
+
+1. **`prisma/seed.ts`.** The one piece of ordinary developer comfort that is missing. Every browser
+   check in this repository seeds its own fixture with raw SQL, which is a sign.
+2. **Logo upload.** The first thing an organiser will ask for after seeing the branding screen, and
+   the reason `Theme.logoUrl` is already in the schema.
+3. **An embedded font for the PDF**, so a delegate whose name is in Devanagari is not printed as
+   `???` at their own conference.
+4. **A second pair of eyes on the CSP.** It is the newest control and the one with the least
+   operational history — `report-uri` to somewhere real would be the honest next step, once there is
+   somebody to read it.
+
+## Before starting anything
 
 1. `mun-pg start`, then `npm test` — confirm green before changing anything.
 2. Read `01-CURRENT-STATE.md` for the **do not build in v1** list. A new session will otherwise
    helpfully build a form builder, or a pricing page, or email sending.
 3. Read `02-INVARIANTS.md`. Adding a table without classifying it, or without RLS, fails CI — by
    design, but knowing why saves a confused half hour.
+4. If you touch anything the browser decides — the CSP, the offline queue, an inline `<style>` —
+   run the two scripts in `08-TESTING.md`. No server-side check can see those failures.

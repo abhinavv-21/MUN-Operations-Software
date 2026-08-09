@@ -226,6 +226,57 @@ already answers on the port. A stale server is not a condition to work around si
 because its green is indistinguishable from a real one. When a revert-the-fix check does not go red,
 suspect the harness before the conclusion.
 
+### 16. A nonce-based CSP silently un-hydrated every static page — *Stage 8*
+
+**Symptom:** none that any server-side check could see. `typecheck`, `lint`, 224 tests and `build`
+all passed. The pages rendered perfectly and did nothing.
+
+**Cause:** a nonce is per request. A statically prerendered page was generated at build time, before
+any request existed, so Next could not stamp the nonce onto its script tags — and the browser then
+refused the page's own bootstrap.
+
+The failure was legible only because of *which* pages failed: `/sign-in` and `/invite` passed,
+`/`, `/how-it-works` and `/offline` did not. Dynamic versus static, exactly.
+
+**Fix:** the root layout reads `x-nonce` from the request headers, which both supplies the nonce to
+the inline theme block and makes every route dynamic. The cost is the CDN cache on two marketing
+pages; it was accepted only after measuring Lighthouse at 100 for performance without it.
+
+**Caught by** `scripts/csp-check.mjs`, written before the policy because this is trap 8's family: a
+whole class of bug that no server-side check can see. It loads every page type in a real Chrome,
+listens for `securitypolicyviolation`, and asks the page whether React actually hydrated — a blocked
+bootstrap paints the server HTML perfectly and responds to nothing.
+
+**Two more the same script found**, both after the policy "worked": a third `<style>` call site on
+the public registration page that never got the nonce, so applicants would have seen the default
+palette rather than the organiser's; and the settings theme preview, which rendered a `<style>`
+element on the *client*, where no nonce exists — rewritten as a style attribute, which
+`style-src-attr` permits.
+
+**Lesson:** write the check before the control it checks. And when a policy fails on some pages and
+not others, read the list of which — it usually names the cause.
+
+### 17. Lighthouse measured a build that no longer existed — *Stage 8*
+
+**Symptom:** a CSP violation that had already been fixed kept appearing in the Lighthouse report,
+while `csp-check.mjs` on the same page reported none.
+
+**Cause:** the same leak as trap 15, from the other end. Four `next start` servers from earlier runs
+were still holding ports, because `pkill -f "next start -p 3213"` matches the wrapper and not the
+`next-server` process that actually listens. Lighthouse connected to whichever one owned the port
+and measured a build from twenty minutes earlier.
+
+**The tell was in the report:** the policy it quoted had no `style-src-elem`, which the current build
+had. A stale artefact usually says so if you read it closely.
+
+**Fix:** the runner refuses to start when anything already answers on its port, and kills by process
+group. Two tools now disagreeing is a signal to check they are looking at the same thing.
+
+**Also from this:** `chrome-launcher` treats WSL as Windows and creates its temp directory from
+`LOCALAPPDATA`, which landed a literal `C:\Users\...` **directory inside the repository**. The next
+Turbopack build then failed with an unrelated-looking CSS parse error pointing at `globals.css`.
+Lighthouse now runs from outside the repository.
+
 ---
 
 ## Process
