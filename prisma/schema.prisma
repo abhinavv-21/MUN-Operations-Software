@@ -54,6 +54,16 @@ enum BillingStatus {
   CANCELED
 }
 
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum IntegrationKind {
+  GOOGLE_SHEETS
+}
+
 enum ConferenceStatus {
   DRAFT
   OPEN
@@ -110,6 +120,7 @@ model User {
 
   memberships         Membership[]
   conferenceRoles     ConferenceRole[]
+  reviewedRegistrations Registration[]
   invitationsSent     Invitation[]     @relation("InvitationInvitedBy")
   invitationsAccepted Invitation[]     @relation("InvitationAcceptedBy")
   auditLogs           AuditLog[]
@@ -191,11 +202,14 @@ model Conference {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  committees   Committee[]
-  countries    CommitteeCountry[]
-  roles        ConferenceRole[]
-  auditLogs    AuditLog[]
+  organization  Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  committees    Committee[]
+  countries     CommitteeCountry[]
+  roles         ConferenceRole[]
+  registrations Registration[]
+  delegates     Delegate[]
+  integrations  ConferenceIntegration[]
+  auditLogs     AuditLog[]
 
   /// Scoped to the organisation, so two organisations may both run a
   /// conference called `mun-x`.
@@ -326,4 +340,120 @@ model CommitteeCountry {
   @@unique([conferenceId, committeeId, country])
   @@index([conferenceId])
   @@index([committeeId])
+}
+
+
+/// A public application. The only unauthenticated write in the product.
+///
+/// A submission here creates a Registration and nothing else. It cannot create
+/// a User, and it cannot create a Delegate — approval by an organiser does
+/// that. Nobody registers their way into the operations hub, and an integration
+/// test is named after that guarantee.
+model Registration {
+  id           String @id @default(uuid(7))
+  conferenceId String
+
+  /// The only handle an applicant holds on their own row. Generated with
+  /// `randomInt` over an alphabet with I/1 and O/0 removed, because it gets
+  /// read down a phone and copied off a screenshot.
+  reference String
+
+  fullName   String
+  /// Deliberately NOT unique. A rejected applicant may legitimately reapply,
+  /// and a school secretary submits for two students from one inbox. The rule
+  /// that matters — one *live* application per address — is a PENDING/APPROVED
+  /// lookup in the service, not a database constraint.
+  email      String
+  phone      String?
+  schoolName String?
+  grade      String?
+
+  /// A form answer is a wish, not a placement. Read, stored, and never acted
+  /// on: importing never allocates.
+  committeePreference  String?
+  committeePreference2 String?
+
+  munsAttended Int?
+  awardsWon    Int?
+
+  /// Pinned to the configured bucket and prefix before it is stored, so an
+  /// arbitrary URL cannot be put here and later clicked by an organiser.
+  paymentProofUrl String?
+
+  dietaryNotes       String?
+  accessibilityNotes String?
+
+  status           RegistrationStatus @default(PENDING)
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+  rejectionReason  String?
+
+  /// The address the platform vouched for, not the one the caller claimed.
+  submittedIp String?
+  userAgent   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  reviewedBy User?      @relation(fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  delegate   Delegate?
+
+  @@unique([conferenceId, reference])
+  @@index([conferenceId, status])
+  @@index([conferenceId, email])
+}
+
+/// An accepted participant.
+model Delegate {
+  id           String @id @default(uuid(7))
+  conferenceId String
+
+  fullName   String
+  /// Unique per conference, not globally. The reference product makes this
+  /// globally unique, which breaks the moment the same student registers for
+  /// MUN X and MUN XI — the exact case this product exists to serve.
+  email      String
+  phone      String?
+  schoolName String?
+  grade      String?
+
+  registrationId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conference   Conference    @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+
+  @@unique([conferenceId, email])
+  @@index([conferenceId])
+}
+
+/// Per-conference integration configuration.
+///
+/// The secret is stored as a SHA-256 and compared in constant time, so this
+/// table cannot be read back into a working credential — the same reasoning as
+/// invitation tokens.
+model ConferenceIntegration {
+  id           String @id @default(uuid(7))
+  conferenceId String
+
+  kind       IntegrationKind
+  secretHash String
+
+  /// Maps the organiser's own form headers onto our fields, so their existing
+  /// Google Form *is* their custom form and no form builder is needed.
+  headerMap Json?
+
+  lastRunAt  DateTime?
+  lastResult Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([conferenceId, kind])
+  @@index([conferenceId])
 }

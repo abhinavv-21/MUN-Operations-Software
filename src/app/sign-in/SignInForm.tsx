@@ -71,6 +71,12 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
   return (
     <div className="flex flex-col gap-5">
       <Button variant="secondary" onClick={signInWithGoogle} disabled={busy}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- next/image
+            does not process SVG unless `dangerouslyAllowSVG` is turned on,
+            which would apply to every remote image the product ever renders.
+            Turning that on for one 18px static mark that is already optimal is
+            the wrong trade. */}
+        <img src="/google.svg" alt="" width={18} height={18} aria-hidden />
         Continue with Google
       </Button>
 

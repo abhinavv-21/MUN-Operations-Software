@@ -68,6 +68,46 @@ export function listMembershipsForUser(userId: string) {
  * lookup is by hash rather than by comparison, so an invalid token simply finds
  * nothing and there is no string comparison to time.
  */
+/**
+ * A conference by its public address, for the registration page.
+ *
+ * The fourth and last function here, and it is a scope-discovery read like the
+ * others: `/r/lps-mun/mun-xi` is how an anonymous visitor names a conference,
+ * and there is no membership to scope it by because there is no visitor
+ * identity at all.
+ *
+ * Selects only what the public page and the submission handler need. An
+ * unpublished conference is filtered out here rather than by the caller, so
+ * forgetting that check is not possible from outside this file.
+ */
+export function findPublicConference(organizationSlug: string, conferenceSlug: string) {
+  return unsafeDb.conference.findFirst({
+    where: {
+      slug: conferenceSlug,
+      organization: { slug: organizationSlug },
+      // DRAFT and ARCHIVED are not addressable from the internet. A conference
+      // being drafted should not be discoverable by guessing its slug.
+      status: { in: ['OPEN', 'CLOSED'] },
+    },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      edition: true,
+      status: true,
+      venue: true,
+      startsOn: true,
+      endsOn: true,
+      registrationDeadline: true,
+      feeMinorUnits: true,
+      feeCurrency: true,
+      logoUrl: true,
+      theme: true,
+      organization: { select: { id: true, slug: true, name: true, defaultTheme: true } },
+    },
+  })
+}
+
 export function findInvitationByTokenHash(tokenHash: string) {
   return unsafeDb.invitation.findUnique({
     where: { tokenHash },

@@ -61,6 +61,14 @@ export class ApiError extends Error {
     return new ApiError(message, 422, details)
   }
 
+  static tooManyRequests(message = 'Too many attempts', details?: unknown) {
+    return new ApiError(message, 429, details)
+  }
+
+  static serviceUnavailable(message = 'That is not available right now', details?: unknown) {
+    return new ApiError(message, 503, details)
+  }
+
   static internal(message = 'Something went wrong', details?: unknown) {
     return new ApiError(message, 500, details)
   }
