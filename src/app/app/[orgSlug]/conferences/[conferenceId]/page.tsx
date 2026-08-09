@@ -1,4 +1,6 @@
+import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge.tsx'
+import { Button } from '@/components/ui/Button.tsx'
 import { PageHeader } from '@/components/ui/PageHeader.tsx'
 import { pageCtx } from '@/server/page-ctx.ts'
 import { getConference } from '@/server/services/conferences.ts'
@@ -43,7 +45,16 @@ export default async function ConferencePage({ params }: { params: Promise<Param
         description={
           conference.venue ?? 'Add dates, venue and fee in conference settings — arriving next.'
         }
-        actions={<Badge tone={STATUS_TONE[conference.status]}>{conference.status.toLowerCase()}</Badge>}
+        actions={
+          <>
+            <Badge tone={STATUS_TONE[conference.status]}>{conference.status.toLowerCase()}</Badge>
+            <Button variant="secondary" asChild>
+              <Link href={`/app/${orgSlug}/conferences/${conferenceId}/registrations`}>
+                Registrations
+              </Link>
+            </Button>
+          </>
+        }
       />
       <CommitteesClient
         orgSlug={orgSlug}
