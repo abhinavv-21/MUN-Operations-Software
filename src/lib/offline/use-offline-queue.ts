@@ -10,7 +10,13 @@ import { queueState, startQueue, subscribe, type QueueState } from './queue.ts'
  * compares it by reference, so it has to be one object created once. Building
  * it inside the function is the classic infinite-render bug.
  */
-const SERVER_STATE: QueueState = { pending: 0, flushing: false, offline: false, lastDrop: null }
+const SERVER_STATE: QueueState = {
+  pending: 0,
+  flushing: false,
+  offline: false,
+  lastDrop: null,
+  lastFlushAt: null,
+}
 
 export function useOfflineQueue(): QueueState {
   return useSyncExternalStore(subscribe, queueState, () => SERVER_STATE)

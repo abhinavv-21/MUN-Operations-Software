@@ -25,29 +25,52 @@ export const THEME_FONTS = ['grotesk', 'serif', 'humanist'] as const
 
 export const themeSchema = z.object({
   preset: z.enum(THEME_PRESETS).default('magenta'),
+  /*
+    Every seed is optional, and each absent one is filled from the preset by
+    `withPreset`. That is the whole mechanism by which choosing a preset does
+    anything.
+
+    They used to carry the magenta values as per-field `.default(...)`. Combined
+    with `.prefault({})` on the object — which feeds the value through the schema
+    rather than handing it back — that meant parsing produced four explicit
+    magenta colours whatever preset was named, and `withPreset`, which spreads
+    the seed *over* the preset so a genuine override wins, could never apply one.
+    `themeSchema.parse({ preset: 'forest' })` returned magenta, silently.
+
+    Nothing in the product noticed because the settings form always sends four
+    explicit colours. An API caller sending `{ "preset": "navy" }`, or a row
+    edited by hand, got magenta.
+  */
   seed: z
     .object({
       /** The brand. Drives accent, hovers, tints, washes and the page rule. */
-      primary: hexColor.default('#b41884'),
+      primary: hexColor.optional(),
       /** Body text on light grounds, and the dark ground itself. */
-      ink: hexColor.default('#1a0715'),
+      ink: hexColor.optional(),
       /** The light ground. */
-      paper: hexColor.default('#f8fafc'),
+      paper: hexColor.optional(),
       /** A second, optional accent. Decorative — never the sole carrier of meaning. */
-      accent: hexColor.default('#d9a441'),
+      accent: hexColor.optional(),
     })
-    // `prefault`, not `default`. A default value is handed back as-is without
-    // being parsed, so `.default({})` would produce a seed with no colours in
-    // it and every derived token would come out `undefined`. `prefault` feeds
-    // the value through the schema, so the four field defaults actually apply.
     .prefault({}),
   radius: z.enum(THEME_RADII).default('soft'),
   font: z.enum(THEME_FONTS).default('grotesk'),
   logoUrl: z.url().max(500).nullable().default(null),
 })
 
-export type Theme = z.infer<typeof themeSchema>
-export type ThemeSeed = Theme['seed']
+/** What arrives from a caller: a preset, and any seeds they chose to override. */
+export type ThemeInput = z.infer<typeof themeSchema>
+
+/** Four colours, all present. What everything downstream of `withPreset` sees. */
+export interface ThemeSeed {
+  primary: string
+  ink: string
+  paper: string
+  accent: string
+}
+
+/** A theme with its preset applied. The only shape `buildThemeVars` derives from. */
+export type Theme = Omit<ThemeInput, 'seed'> & { seed: ThemeSeed }
 
 /** The presets, as seeds. The reference product's magenta is the default. */
 export const PRESET_SEEDS: Record<(typeof THEME_PRESETS)[number], ThemeSeed> = {
@@ -60,16 +83,37 @@ export const PRESET_SEEDS: Record<(typeof THEME_PRESETS)[number], ThemeSeed> = {
   slate: { primary: '#334155', ink: '#0f172a', paper: '#f8fafc', accent: '#0e7490' },
 }
 
-/** Parses whatever is on the row, falling back to the default theme. */
+/**
+ * Parses whatever is on the row and resolves it, falling back to the default.
+ *
+ * Always returns a complete theme, so no consumer has to know that a stored row
+ * may name a preset and no colours.
+ */
 export function parseTheme(value: unknown): Theme {
   const parsed = themeSchema.safeParse(value ?? {})
-  return parsed.success ? parsed.data : themeSchema.parse({})
+  return withPreset(parsed.success ? parsed.data : themeSchema.parse({}))
 }
 
 /**
- * Applies a preset's seeds, keeping any the organiser has overridden.
- * Choosing a preset is a starting point, not a reset.
+ * Applies a preset's seeds, keeping any the organiser actually overrode.
+ *
+ * Field by field rather than by spreading, because the distinction that matters
+ * is between "they chose this colour" and "they did not" — and a spread cannot
+ * tell an explicit value from a filled-in one. Choosing a preset is a starting
+ * point, not a reset.
+ *
+ * Idempotent: applying it to an already-resolved theme returns the same theme.
  */
-export function withPreset(theme: Theme): Theme {
-  return { ...theme, seed: { ...PRESET_SEEDS[theme.preset], ...theme.seed } }
+export function withPreset(theme: ThemeInput): Theme {
+  const preset = PRESET_SEEDS[theme.preset]
+
+  return {
+    ...theme,
+    seed: {
+      primary: theme.seed.primary ?? preset.primary,
+      ink: theme.seed.ink ?? preset.ink,
+      paper: theme.seed.paper ?? preset.paper,
+      accent: theme.seed.accent ?? preset.accent,
+    },
+  }
 }

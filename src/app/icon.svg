@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Bloc">
+  <!--
+    The mark: a bloc forming.
+
+    Nine seats in a three-by-three grid. Five of them stand alone; four have
+    merged into one shape. That is what the word means — a group that has stopped
+    voting individually and started moving together — and it is also what the
+    country matrix looks like from above, which is the artifact this product is
+    built around.
+
+    The colour is a literal, and deliberately so. Every other colour in this
+    codebase derives from an organisation's four seed colours and is banned as a
+    literal by `npm run lint`; a favicon has no organisation and cannot be
+    themed, so it belongs outside that system for the same reason
+    `public/google.svg` does. This is the product's own magenta, the default
+    theme's `seed.primary`.
+  -->
+  <rect x="2" y="2" width="18" height="18" rx="4.5" fill="#b41884" />
+  <g fill="#b41884" opacity="0.26">
+    <rect x="22" y="2" width="8" height="8" rx="2.25" />
+    <rect x="22" y="12" width="8" height="8" rx="2.25" />
+    <rect x="2" y="22" width="8" height="8" rx="2.25" />
+    <rect x="12" y="22" width="8" height="8" rx="2.25" />
+    <rect x="22" y="22" width="8" height="8" rx="2.25" />
+  </g>
+</svg>

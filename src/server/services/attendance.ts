@@ -52,6 +52,17 @@ export const checkInSchema = z.object({
   day: daySchema,
   status: z.enum(['PRESENT', 'LATE', 'ABSENT']).default('PRESENT'),
   note: z.string().trim().max(240).optional(),
+  /**
+   * When the mark was made on the device, for a check-in that was queued.
+   *
+   * Without it the server stamps the moment the queue happened to flush, so a
+   * delegate marked at 08:47 in a corridor with no signal is recorded as
+   * arriving at 09:35. `markedAt` is the one column attendance exists for.
+   *
+   * Clamped below rather than trusted: it comes from a browser clock, and a
+   * device an hour fast must not be able to record arrivals in the future.
+   */
+  markedAt: z.iso.datetime().optional(),
 })
 
 export type AttendanceFilters = z.infer<typeof attendanceFiltersSchema>
@@ -171,6 +182,18 @@ export async function checkIn(ctx: Ctx, input: CheckInInput) {
 
   const day = parseDay(input.day)
 
+  /*
+    The client's clock, bounded by ours.
+
+    A queued mark carries the time it was made, which is the whole point. But it
+    is a browser clock: it can be wrong by hours, and a mark stamped in the
+    future would sort above marks that genuinely came later. Anything ahead of
+    now, or absent, falls back to now.
+  */
+  const now = new Date()
+  const claimed = input.markedAt ? new Date(input.markedAt) : now
+  const markedAt = Number.isNaN(claimed.getTime()) || claimed > now ? now : claimed
+
   return runSerializable(ctx.db, async (tx) => {
     const delegate = await tx.delegate.findFirst({
       where: { id: input.delegateId },
@@ -195,7 +218,7 @@ export async function checkIn(ctx: Ctx, input: CheckInInput) {
             data: {
               status: input.status,
               note: input.note ?? null,
-              markedAt: new Date(),
+              markedAt,
               markedByUserId: actor.id,
             },
           })
@@ -205,6 +228,7 @@ export async function checkIn(ctx: Ctx, input: CheckInInput) {
             day,
             status: input.status,
             note: input.note ?? null,
+            markedAt,
             markedByUserId: actor.id,
           }),
         })

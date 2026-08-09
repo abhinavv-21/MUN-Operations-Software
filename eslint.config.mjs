@@ -75,6 +75,9 @@ const eslintConfig = defineConfig([
       // its route. See docs/03-ARCHITECTURE.md.
       'src/server/scope-resolution.ts',
       'src/app/api/health/route.ts',
+      // The seed writes across every tenant it creates, before any of them has
+      // a request context to be scoped from.
+      'prisma/seed.ts',
       'tests/**/*.ts',
     ],
     rules: {

@@ -71,7 +71,21 @@ export function Modal({
 
           <div className="min-w-0">{children}</div>
 
-          {footer ? <div className="flex flex-wrap justify-end gap-2">{footer}</div> : null}
+          {/*
+            Stacked and full width on a phone, a right-aligned row from sm up.
+
+            `flex-col-reverse` puts the last child — which is the confirming
+            action in every dialog in this product — at the top of the stack,
+            under the thumb and above Cancel. The previous `flex-wrap
+            justify-end` produced two half-width buttons crowded into the
+            bottom-right corner of a bottom sheet, which is the worst place on
+            a phone to put the decision.
+          */}
+          {footer ? (
+            <div className="flex flex-col-reverse gap-2 border-t border-edge pt-4 sm:flex-row sm:justify-end sm:border-0 sm:pt-0">
+              {footer}
+            </div>
+          ) : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

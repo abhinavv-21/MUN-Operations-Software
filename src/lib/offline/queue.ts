@@ -71,9 +71,28 @@ export interface QueueState {
   offline: boolean
   /** Set when a write was refused on its merits and dropped. */
   lastDrop: string | null
+  /**
+   * When a flush last actually landed something, as a timestamp.
+   *
+   * The queue drains in this module, with no idea that React exists. Without a
+   * signal back, a screen that showed an optimistic mark had no way to learn the
+   * write had gone through: the row kept saying "waiting to send" for the rest
+   * of the conference while the server row beside it was already correct.
+   *
+   * A timestamp rather than an event, so a component can simply put it in a
+   * query key and let the refetch happen — no effect, no `setState` in an
+   * effect, nothing to unsubscribe.
+   */
+  lastFlushAt: number | null
 }
 
-let state: QueueState = { pending: 0, flushing: false, offline: false, lastDrop: null }
+let state: QueueState = {
+  pending: 0,
+  flushing: false,
+  offline: false,
+  lastDrop: null,
+  lastFlushAt: null,
+}
 const listeners = new Set<(next: QueueState) => void>()
 
 function publish(patch: Partial<QueueState>): void {
@@ -184,6 +203,7 @@ export async function flush(): Promise<void> {
 
 async function run(): Promise<void> {
   publish({ flushing: true })
+  let landed = 0
 
   try {
     for (;;) {
@@ -205,6 +225,7 @@ async function run(): Promise<void> {
 
       if (verdict.verdict === 'done') {
         await db().writes.delete(next.id!)
+        landed += 1
         await refreshCount()
         continue
       }
@@ -225,7 +246,9 @@ async function run(): Promise<void> {
       break
     }
   } finally {
-    publish({ flushing: false })
+    // Only when something actually landed. Publishing on every poll would
+    // invalidate every screen every fifteen seconds for nothing.
+    publish({ flushing: false, ...(landed > 0 ? { lastFlushAt: Date.now() } : {}) })
     await refreshCount()
   }
 }

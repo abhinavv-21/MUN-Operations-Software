@@ -71,17 +71,40 @@ export interface QueuedWrite {
  * - `retry` — the request never reached the API. Keep it, stop flushing, and
  *   wait for the next connection event. Continuing down the queue here would
  *   burn every entry's attempt counter against the same dead network.
- * - `drop` — the server answered and refused on the merits. Keep retrying a
+ * - `drop` — **the server answered** and refused on the merits. Keep retrying a
  *   422 forever and the queue never empties, so the pill says "3 pending" for
  *   the rest of the conference and everyone learns to ignore it. It is dropped
  *   and reported instead.
+ *
+ * The distinction that matters is whether anything answered. "The server said
+ * no" is information; "nothing came back" is the absence of information, and
+ * the two must never be collapsed — see the note on `MAX_ATTEMPTS`.
  */
 export type AttemptOutcome =
   | { verdict: 'done' }
   | { verdict: 'retry'; reason: string }
   | { verdict: 'drop'; reason: string }
 
-/** How many times one entry is retried before it is reported and dropped. */
+/**
+ * How many times a write the server *answered badly* is retried before it is
+ * reported and dropped.
+ *
+ * **This has never applied to a write that got no answer at all, and must not.**
+ * It did once, and the bug it caused is the worst this product has had.
+ *
+ * The flush poll runs every fifteen seconds and makes exactly one attempt on the
+ * head of the queue before stopping. So eight attempts against a dead network is
+ * a hundred and five seconds — after which the queue *deleted* the entry. Two
+ * minutes without signal in a basement committee room, which is the precise
+ * scenario the queue exists for and the one written on the landing page, and
+ * every check-in and every logistics request in it was destroyed. The only trace
+ * was a single dismissable string that named no delegate.
+ *
+ * A code-0 outcome is not a refusal. Nothing reached the API, so there is no
+ * verdict to act on and nothing has been learned by trying. It is retried until
+ * the network comes back or the tab is closed, and the queue is in IndexedDB
+ * precisely so that closing the tab is not fatal either.
+ */
 export const MAX_ATTEMPTS = 8
 
 /**
@@ -95,14 +118,13 @@ export function classifyAttempt(
 ): AttemptOutcome {
   if (outcome.ok) return { verdict: 'done' }
 
-  if (outcome.code === 0) {
-    return attempts + 1 >= MAX_ATTEMPTS
-      ? {
-          verdict: 'drop',
-          reason: `Gave up after ${MAX_ATTEMPTS} attempts: ${outcome.message}`,
-        }
-      : { verdict: 'retry', reason: outcome.message }
-  }
+  /*
+    Nothing answered. Retry forever — see MAX_ATTEMPTS.
+
+    `attempts` keeps counting, because the pending list uses it to say how long
+    something has been waiting, but it can never reach a verdict here.
+  */
+  if (outcome.code === 0) return { verdict: 'retry', reason: outcome.message }
 
   /*
     A 401 is a retry, not a drop.

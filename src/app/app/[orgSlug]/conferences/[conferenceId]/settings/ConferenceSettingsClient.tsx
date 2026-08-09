@@ -138,7 +138,7 @@ export function ConferenceSettingsClient({
         />
 
         <form onSubmit={save} className="flex flex-col gap-4">
-          {error ? <ErrorState message={error} /> : null}
+          {error ? <ErrorState title="That did not save" message={error} /> : null}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name" required>
@@ -348,7 +348,7 @@ export function ConferenceSettingsClient({
         }
       >
         <div className="flex flex-col gap-4">
-          {deleteError ? <ErrorState message={deleteError} /> : null}
+          {deleteError ? <ErrorState title="That did not save" message={deleteError} /> : null}
 
           <div
             role="alert"

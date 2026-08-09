@@ -164,6 +164,46 @@ scraping the wrong path once produced a confident false negative.
 
 ---
 
+## Renaming the hosted project
+
+The product is **Bloc**. The repository and the Vercel project still carry the old working title,
+because renaming either needs credentials that are not on this machine — and because the Vercel half
+has a consequence worth doing deliberately rather than in passing.
+
+**GitHub.** Settings → General → Repository name → `Bloc`. GitHub keeps a permanent redirect from
+the old path, so existing clones and the `origin` remote keep working; update the remote anyway:
+
+```bash
+git remote set-url origin https://github.com/abhinavv-21/Bloc.git
+```
+
+**Vercel, and the part that bites.** Renaming the project changes the production URL from
+`munopshub.vercel.app` to `<new-name>.vercel.app`. Two things break the moment it does, and both
+break silently:
+
+1. **Every registration link already given out.** `/r/<org>/<conference>` is printed on posters and
+   pasted into school newsletters. Vercel does not redirect the old subdomain.
+2. **Sign-in, completely.** Supabase's `site_url` and its redirect allowlist both name the old
+   origin. OAuth comes back to an address that is no longer allowed and the callback reports the
+   link as expired — which is trap 10 wearing a different hat, and it looks like an auth bug rather
+   than a rename.
+
+So do it in this order, or not at all:
+
+1. Add the new name as a **domain** on the existing Vercel project first, so both resolve.
+2. Update Supabase → Authentication → URL Configuration: `site_url`, and add the new
+   `/auth/callback` to the allowlist. Leave the old one in place.
+3. Redeploy. Environment variables are inlined at build time, so a rename with no redeploy leaves
+   the old origin in the bundle.
+4. Verify sign-in on the new origin **before** removing the old domain.
+5. Only then rename the project and drop the old domain.
+
+The alternative, and the better one once there is a first paying organiser: buy a domain and point
+it at the project. Then the Vercel project name stops being anybody's address and this problem never
+recurs.
+
+---
+
 ## Known stale references
 
 - **`prisma/seed.ts`** was listed in the ESLint allowlist but never created. Removed; recreate the

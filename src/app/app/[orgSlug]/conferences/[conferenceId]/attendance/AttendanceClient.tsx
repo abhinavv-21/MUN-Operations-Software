@@ -10,8 +10,10 @@ import { DataTable, type Column } from '@/components/ui/DataTable.tsx'
 import { Input, Select } from '@/components/ui/Field.tsx'
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/States.tsx'
 import { ApiError, apiFetch, errorMessage } from '@/lib/api.ts'
+import { cn } from '@/lib/utils.ts'
 import { invalidateConferenceDay } from '@/lib/invalidation.ts'
 import { sendOrQueue } from '@/lib/offline/queue.ts'
+import { useOfflineQueue } from '@/lib/offline/use-offline-queue.ts'
 import { queryKeys } from '@/lib/query-keys.ts'
 
 type Status = 'PRESENT' | 'LATE' | 'ABSENT'
@@ -68,12 +70,32 @@ export function AttendanceClient({
   const [day, setDay] = useState(todayLocal)
   const [search, setSearch] = useState('')
   const [committeeId, setCommitteeId] = useState('')
+
+  /**
+   * Marks this device has made but not yet seen come back from the server.
+   *
+   * Written the moment the button is pressed, not when the request resolves.
+   * This is the most-pressed control in the product and it is pressed on one bar
+   * of signal: without it, the operator taps "In", nothing changes for three
+   * seconds, and they tap again or walk away unsure.
+   */
   const [queued, setQueued] = useState<Record<string, Status>>({})
+
+  const { lastFlushAt } = useOfflineQueue()
 
   const filters = { day, search: search || undefined, committeeId: committeeId || undefined }
 
   const data = useQuery({
-    queryKey: queryKeys.attendance(conferenceId, filters),
+    /*
+      `lastFlushAt` is in the key on purpose.
+
+      The queue drains in a module that knows nothing about React, so when a
+      check-in made offline finally lands there is otherwise nothing to tell this
+      screen. Putting the timestamp in the key makes the refetch fall out of
+      React Query's own machinery — no effect, no subscription, and no `setState`
+      inside `useEffect`, which this codebase lints against.
+    */
+    queryKey: queryKeys.attendance(conferenceId, { ...filters, flushed: lastFlushAt }),
     queryFn: () => {
       const query = new URLSearchParams({ day })
       if (search) query.set('search', search)
@@ -89,30 +111,49 @@ export function AttendanceClient({
         delegateId: input.delegateId,
         day,
         status: input.status,
-      }),
-    onSuccess: (outcome, input) => {
-      if (outcome.sent) {
-        // Landed. Drop any optimistic mark and let the refetch be the truth.
-        setQueued((current) => {
-          if (!(input.delegateId in current)) return current
-          const rest = { ...current }
-          delete rest[input.delegateId]
-          return rest
-        })
-        invalidateConferenceDay(client, conferenceId)
-        return
-      }
+        /*
+          The time the mark was made, not the time it syncs.
 
-      /*
-        Queued rather than sent. The row has to show the mark immediately —
-        the operator is holding a queue of delegates and cannot wait for the
-        network to come back to find out whether the tap registered — but the
-        server list has not changed, so this is held separately and reconciled
-        when the flush lands.
-      */
-      setQueued((current) => ({ ...current, [input.delegateId]: input.status }))
+          A check-in queued at 08:47 and flushed at 09:35 was being written with
+          `markedAt` 09:35, and the audit row said the same. Attendance is the
+          record of who was where and when; that column is the one thing it
+          exists for, and the screen promises marks are "saved on this device and
+          sent when it returns" — true about the data and quietly false about the
+          time.
+        */
+        markedAt: new Date().toISOString(),
+      }),
+    // Optimistic, and before the request rather than after it.
+    onMutate: (input) => setQueued((current) => ({ ...current, [input.delegateId]: input.status })),
+    onError: (_error, input) =>
+      setQueued((current) => {
+        if (!(input.delegateId in current)) return current
+        const rest = { ...current }
+        delete rest[input.delegateId]
+        return rest
+      }),
+    onSuccess: (outcome) => {
+      // Sent straight through: refetch so the row becomes server truth. Queued
+      // instead: leave the optimistic mark, and the reconciliation below clears
+      // it when the real row arrives.
+      if (outcome.sent) invalidateConferenceDay(client, conferenceId)
     },
   })
+
+  /**
+   * Reconciliation, by derivation rather than by effect.
+   *
+   * A queued mark is "still waiting" only until a server row agrees with it.
+   * Comparing the two at render means the pending marker clears itself the
+   * moment the refetch lands, with no timer, no effect and no state to reset —
+   * and it cannot get stuck, which is what the previous version did for the rest
+   * of the conference.
+   */
+  const pendingMark = (row: Row): Status | null => {
+    const mark = queued[row.id]
+    if (!mark) return null
+    return row.attendance?.status === mark ? null : mark
+  }
 
   const committees = useMemo(() => {
     const seen = new Map<string, string>()
@@ -159,13 +200,13 @@ export function AttendanceClient({
       */
       secondary: true,
       render: (row) => {
-        const pending = queued[row.id]
-        const status = pending ?? row.attendance?.status
+        const waiting = pendingMark(row)
+        const status = waiting ?? row.attendance?.status
         if (!status) return <span className="text-body-sm text-ink-secondary">Not marked</span>
         return (
           <div className="flex items-center gap-2">
             <Badge tone={STATUS_TONE[status]}>{status.toLowerCase()}</Badge>
-            {pending ? (
+            {waiting ? (
               <span className="text-body-sm text-ink-secondary">waiting to send</span>
             ) : null}
           </div>
@@ -175,15 +216,25 @@ export function AttendanceClient({
     {
       key: 'actions',
       header: 'Mark',
+      // Right-aligned buttons want a right-aligned header.
+      align: 'right' as const,
       render: (row) => {
-        const current = queued[row.id] ?? row.attendance?.status
+        const waiting = pendingMark(row)
+        const current = waiting ?? row.attendance?.status
         return (
-          <div className="flex justify-end gap-1">
+          <div className="flex items-center justify-end gap-1">
             {(['PRESENT', 'LATE', 'ABSENT'] as const).map((status) => (
               <Button
                 key={status}
                 size="sm"
                 variant={current === status ? 'primary' : 'ghost'}
+                /*
+                  `aria-pressed`, because the only other signal that this is the
+                  current mark is the fill. A screen reader otherwise hears three
+                  identical buttons, and so does anybody reading a phone at an
+                  angle in a bright corridor.
+                */
+                aria-pressed={current === status}
                 aria-label={`Mark ${row.fullName} ${status.toLowerCase()}`}
                 data-testid={`mark-${status.toLowerCase()}`}
                 onClick={() => checkIn.mutate({ delegateId: row.id, status })}
@@ -191,6 +242,21 @@ export function AttendanceClient({
                 {status === 'PRESENT' ? 'In' : status === 'LATE' ? 'Late' : 'Absent'}
               </Button>
             ))}
+            {/*
+              The pending marker lives in the Mark column, which is always
+              visible. It used to live in Status, which is `secondary` and
+              therefore hidden below md — so on the phone at the registration
+              desk, the one device this screen is for, nothing distinguished
+              "saved" from "sitting in IndexedDB".
+            */}
+            <span
+              aria-hidden
+              className={cn(
+                'ml-1 size-1.5 shrink-0 rounded-pill bg-warning transition-opacity duration-micro',
+                waiting ? 'opacity-100' : 'opacity-0',
+              )}
+            />
+            {waiting ? <span className="sr-only">waiting to send</span> : null}
           </div>
         )
       },
@@ -201,6 +267,7 @@ export function AttendanceClient({
     <div className="flex flex-col gap-6">
       {checkIn.error ? (
         <ErrorState
+          title="That did not save"
           message={errorMessage(checkIn.error)}
           offline={checkIn.error instanceof ApiError && checkIn.error.isOffline}
         />
@@ -253,6 +320,7 @@ export function AttendanceClient({
               total={summary.total}
               label="Marked present"
               unit="delegates"
+              intent="progress"
             />
             <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[

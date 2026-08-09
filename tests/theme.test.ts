@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { buildThemeVars, contrastPairs, serializeVars, GROUNDS } from '../src/lib/theme/build.ts'
 import { colorDifference, contrastRatio, ensureContrast } from '../src/lib/theme/contrast.ts'
-import { parseTheme, PRESET_SEEDS, themeSchema } from '../src/lib/theme/schema.ts'
+import {
+  parseTheme,
+  PRESET_SEEDS,
+  themeSchema,
+  THEME_PRESETS,
+  withPreset,
+} from '../src/lib/theme/schema.ts'
 
 /**
  * The contrast contract, enforced.
@@ -168,5 +174,52 @@ describe('the theme schema', () => {
     const vars = buildThemeVars(theme)
     // Choosing a preset is a starting point, not a reset of what you already set.
     expect(vars.accent).toBe('#123456')
+  })
+})
+
+/**
+ * Choosing a preset used to do nothing at all.
+ *
+ * The seed carried per-field magenta defaults, so parsing produced four explicit
+ * colours whatever preset was named, and `withPreset` — which lets a genuine
+ * override win by spreading the seed over the preset — could never apply one.
+ * `themeSchema.parse({ preset: 'forest' })` returned magenta, and so did every
+ * token derived from it.
+ *
+ * Nothing in the product noticed, because the settings form always sends four
+ * explicit colours. An API caller naming a preset got the wrong brand.
+ */
+describe('presets', () => {
+  it('applies the preset when the caller named one and chose no colours', () => {
+    for (const preset of THEME_PRESETS) {
+      const theme = parseTheme({ preset })
+      expect(theme.seed, `${preset} did not apply its own seeds`).toEqual(PRESET_SEEDS[preset])
+    }
+
+    // And the derivation actually follows the seeds, rather than every preset
+    // quietly producing the same magenta accent.
+    const accents = THEME_PRESETS.map((preset) => buildThemeVars(parseTheme({ preset })).accent)
+    expect(new Set(accents).size, `five presets produced ${new Set(accents).size} accents`).toBe(
+      THEME_PRESETS.length,
+    )
+  })
+
+  it('keeps a colour the caller actually overrode', () => {
+    const theme = parseTheme({ preset: 'forest', seed: { primary: '#ff0000' } })
+
+    expect(theme.seed.primary).toBe('#ff0000')
+    // …and fills the other three from the preset rather than from magenta.
+    expect(theme.seed.ink).toBe(PRESET_SEEDS.forest.ink)
+    expect(theme.seed.paper).toBe(PRESET_SEEDS.forest.paper)
+  })
+
+  it('falls back to the default theme for a row that is empty or malformed', () => {
+    expect(parseTheme(null).seed).toEqual(PRESET_SEEDS.magenta)
+    expect(parseTheme({ preset: 'not-a-preset' }).seed).toEqual(PRESET_SEEDS.magenta)
+  })
+
+  it('is idempotent, so resolving an already-resolved theme changes nothing', () => {
+    const once = parseTheme({ preset: 'slate' })
+    expect(withPreset(once)).toEqual(once)
   })
 })

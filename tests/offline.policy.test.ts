@@ -91,8 +91,34 @@ describe('what happens to a queued write after an attempt', () => {
     expect(classifyAttempt({ ok: false, code: 404, message: 'Not found' }, 0).verdict).toBe('drop')
   })
 
-  it('gives up eventually rather than retrying for the whole conference', () => {
-    const last = classifyAttempt({ ok: false, code: 0, message: 'offline' }, MAX_ATTEMPTS - 1)
+  /**
+   * The single worst bug this product has had, and the test that now names it.
+   *
+   * `code: 0` used to be counted against `MAX_ATTEMPTS`. The flush poll runs
+   * every fifteen seconds and makes one attempt on the head of the queue, so
+   * eight attempts is a hundred and five seconds — after which the queue
+   * **deleted** the write. Two minutes without signal in a basement committee
+   * room destroyed every queued check-in, in the exact scenario the queue exists
+   * for.
+   *
+   * The Stage 7 browser check did not catch it because it was offline for a few
+   * seconds. Duration, not just the fact of being offline, is the variable that
+   * mattered.
+   */
+  it('never gives up on a write that got no answer, however long the network is gone', () => {
+    for (const attempts of [0, 7, 8, 40, 500]) {
+      const outcome = classifyAttempt({ ok: false, code: 0, message: 'offline' }, attempts)
+      expect(
+        outcome.verdict,
+        `after ${attempts} attempts with no answer, the write must still be kept`,
+      ).toBe('retry')
+    }
+  })
+
+  it('does give up on a write the server kept answering badly', () => {
+    // A 500 is an answer. Retrying it forever is how the pill ends up saying
+    // "3 pending" for the rest of the conference and everybody stops reading it.
+    const last = classifyAttempt({ ok: false, code: 503, message: 'down' }, MAX_ATTEMPTS - 1)
     expect(last.verdict).toBe('drop')
     expect(last).toMatchObject({ reason: expect.stringContaining(`${MAX_ATTEMPTS} attempts`) })
   })

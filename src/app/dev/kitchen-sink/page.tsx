@@ -1,6 +1,8 @@
+import { Fragment } from 'react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, Pencil } from 'lucide-react'
 import { Badge, InvitationBadge, RoleBadge } from '@/components/ui/Badge.tsx'
 import { Button } from '@/components/ui/Button.tsx'
 import { CapacityMeter, Card, CardHeader, Stat } from '@/components/ui/Card.tsx'
@@ -35,20 +37,51 @@ export default function KitchenSinkPage() {
 
   interface Row {
     id: string
+    delegate: string
+    email: string
     committee: string
-    country: string
+    country: string | null
     seats: number
   }
 
+  /*
+    Deliberately mixed: two rows carry a two-line identity cell and one does
+    not, because the row height has to be a floor rather than a fixed value and
+    that is only visible when both shapes are on screen together.
+  */
   const rows: Row[] = [
-    { id: '1', committee: 'UNSC', country: 'France', seats: 15 },
-    { id: '2', committee: 'WHO', country: 'Japan', seats: 40 },
-    { id: '3', committee: 'DISEC', country: 'Brazil', seats: 60 },
+    { id: '1', delegate: 'Priya Sharma', email: 'priya.sharma@school.example', committee: 'UNSC', country: 'France', seats: 15 },
+    { id: '2', delegate: 'Aarav Menon', email: 'aarav.menon@school.example', committee: 'WHO', country: 'Japan', seats: 40 },
+    { id: '3', delegate: 'Ananya Bose', email: '', committee: 'DISEC', country: null, seats: 60 },
   ]
 
   const columns: Column<Row>[] = [
-    { key: 'committee', header: 'Committee', render: (row) => row.committee },
-    { key: 'country', header: 'Country', render: (row) => row.country, secondary: true },
+    {
+      key: 'delegate',
+      header: 'Delegate',
+      render: (row) => (
+        <div className="min-w-0">
+          <p className="truncate text-body text-ink">{row.delegate}</p>
+          {row.email ? (
+            <p className="truncate text-body-sm text-ink-secondary">{row.email}</p>
+          ) : null}
+        </div>
+      ),
+    },
+    { key: 'committee', header: 'Committee', render: (row) => row.committee, secondary: true },
+    {
+      key: 'country',
+      header: 'Allocation',
+      render: (row) =>
+        row.country ? (
+          <div className="flex items-center gap-2">
+            <Badge tone="success">{row.committee}</Badge>
+            <span className="text-body text-ink">{row.country}</span>
+          </div>
+        ) : (
+          <Badge tone="warning">Unallocated</Badge>
+        ),
+    },
     { key: 'seats', header: 'Seats', numeric: true, render: (row) => row.seats },
   ]
 
@@ -62,10 +95,13 @@ export default function KitchenSinkPage() {
         />
 
         <Card>
-          <CardHeader title="Grounds" description="Each republishes the same seven locals." />
+          <CardHeader
+            title="Grounds"
+            description="Each republishes the same seven locals. This card is the instrument for judging them: if a muted line ever looks identical to the line above it, or a swatch edge takes the colour of its text, the ground vocabulary has stopped reaching Tailwind — see the @theme inline block in tokens.css and the reason it has to be inline."
+          />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {GROUNDS.map((ground) => (
-              <div key={ground} className={`ground-${ground} rounded-card p-4`}>
+              <div key={ground} className={`ground-${ground} rounded-card border border-hairline p-4`}>
                 <p className="text-label uppercase">.ground-{ground}</p>
                 <p className="mt-2 text-body">On-ground text</p>
                 <p className="text-body-sm text-on-ground-muted">Muted text</p>
@@ -78,15 +114,49 @@ export default function KitchenSinkPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Buttons" description="Four variants, three sizes, plus loading." />
-          <div className="flex flex-wrap items-center gap-3">
-            <Button>Primary</Button>
-            <Button variant="secondary">Secondary</Button>
-            <Button variant="ghost">Ghost</Button>
-            <Button variant="destructive">Destructive</Button>
-            <Button loading>Loading</Button>
-            <Button disabled>Disabled</Button>
+          <CardHeader
+            title="Buttons"
+            description="Four variants across rest, loading and disabled. Loading must never look disabled — that is a real regression this grid exists to catch."
+          />
+          <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+            {(
+              [
+                ['Rest', {}],
+                ['Loading', { loading: true }],
+                ['Disabled', { disabled: true }],
+              ] as const
+            ).map(([label, state]) => (
+              <Fragment key={label}>
+                <p className="text-label uppercase text-ink-secondary sm:pr-4">{label}</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button {...state}>Primary</Button>
+                  <Button variant="secondary" {...state}>
+                    Secondary
+                  </Button>
+                  <Button variant="ghost" {...state}>
+                    Ghost
+                  </Button>
+                  <Button variant="destructive" {...state}>
+                    Destructive
+                  </Button>
+                </div>
+              </Fragment>
+            ))}
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-edge pt-5">
             <Button size="sm">Small</Button>
+            <Button size="sm" variant="secondary">
+              Small secondary
+            </Button>
+            <Button size="icon" aria-label="Edit">
+              <Pencil size={16} aria-hidden />
+            </Button>
+            <Button size="icon" variant="ghost" aria-label="Edit">
+              <Pencil size={16} aria-hidden />
+            </Button>
+            <Button variant="secondary" asChild>
+              <Link href="/dev/shell">The shell, the strip and forty rows →</Link>
+            </Button>
           </div>
         </Card>
 
@@ -106,24 +176,31 @@ export default function KitchenSinkPage() {
           </div>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Stat label="Delegates" value={248} emphasis />
           <Stat label="Committees" value={6} hint="Across two conferences" />
           <Stat label="Unallocated" value={12} />
-          <Card>
+          <Card className="flex flex-col justify-center gap-3">
             <CapacityMeter filled={14} total={15} label="UNSC" />
-            <div className="mt-4">
-              <CapacityMeter filled={40} total={40} label="WHO" />
-            </div>
-            <div className="mt-4">
-              <CapacityMeter filled={9} total={60} label="DISEC" />
-            </div>
+            <CapacityMeter filled={40} total={40} label="WHO" />
+            <CapacityMeter filled={9} total={60} label="DISEC" />
+            {/* No label: the count must still sit at the right-hand end of the
+                bar it describes. */}
+            <CapacityMeter filled={31} total={44} unit="present" />
           </Card>
         </div>
 
         <Card className="p-0 md:p-0">
-          <div className="p-5 pb-0 md:p-6 md:pb-0">
-            <CardHeader title="Data table" description="Scrolls inside itself, never the body." />
+          <div className="p-5 pb-4 md:p-6 md:pb-4">
+            <CardHeader
+              title="Data table"
+              description="Scrolls inside itself, never the body. Rows are at least 52px and grow for two-line content; the header is a band, not a rule."
+              actions={
+                <Button variant="secondary" size="sm">
+                  Export
+                </Button>
+              }
+            />
           </div>
           <DataTable
             caption="Example allocations"
@@ -132,6 +209,18 @@ export default function KitchenSinkPage() {
             rowKey={(row) => row.id}
             className="rounded-none border-0 border-t border-edge"
           />
+        </Card>
+
+        <Card className="p-0 md:p-0">
+          <div className="p-5 pb-4 md:p-6 md:pb-4">
+            <CardHeader
+              title="Data table, loading"
+              description="The skeleton draws the header band and the same row height, so nothing moves when the data lands. Compare it against the table above."
+            />
+          </div>
+          <div className="border-t border-edge">
+            <SkeletonRows rows={4} columns={4} />
+          </div>
         </Card>
 
         <KitchenSinkInteractive />
@@ -145,15 +234,13 @@ export default function KitchenSinkPage() {
           </div>
         </Card>
 
-        <Card className="p-0 md:p-0">
-          <div className="p-5 md:p-6">
-            <CardHeader title="Loading" description="Skeletons match the final row height." />
-          </div>
-          <SkeletonRows rows={3} />
-          <div className="p-5 md:p-6">
-            <SkeletonCards count={4} />
-          </div>
-        </Card>
+        <div>
+          <CardHeader
+            title="Loading, stats"
+            description="Matches the Stat cards above: same padding, same 40px number."
+          />
+          <SkeletonCards count={4} />
+        </div>
 
         <Card>
           <CardHeader title="Empty" />

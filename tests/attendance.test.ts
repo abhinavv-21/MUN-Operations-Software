@@ -156,6 +156,33 @@ describeWithDb('attendance', () => {
     expect((await unsafeDb.attendanceRecord.findFirstOrThrow({})).status).toBe('LATE')
   })
 
+  /**
+   * Attendance is a record of *when*, and a queued mark syncs later than it was
+   * made. Writing the flush time meant a delegate marked at 08:47 in a corridor
+   * with no signal was recorded as arriving whenever the network came back.
+   */
+  it('records the time the mark was made, not the time it synced', async () => {
+    const madeAt = new Date(Date.now() - 48 * 60_000).toISOString()
+
+    await checkIn({ delegateId, day: '2026-03-14', status: 'PRESENT', markedAt: madeAt })
+
+    const record = await unsafeDb.attendanceRecord.findFirstOrThrow({})
+    expect(record.markedAt.toISOString()).toBe(madeAt)
+  })
+
+  it('refuses a mark time from a device whose clock is ahead', async () => {
+    const future = new Date(Date.now() + 6 * 3_600_000).toISOString()
+    const before = Date.now()
+
+    await checkIn({ delegateId, day: '2026-03-14', status: 'PRESENT', markedAt: future })
+
+    // Clamped to the server's now. A browser clock must not be able to record an
+    // arrival in the future and sort itself above marks that came later.
+    const record = await unsafeDb.attendanceRecord.findFirstOrThrow({})
+    expect(record.markedAt.getTime()).toBeLessThanOrEqual(Date.now())
+    expect(record.markedAt.getTime()).toBeGreaterThanOrEqual(before - 1000)
+  })
+
   it('keeps each day separate', async () => {
     await checkIn({ delegateId, day: '2026-03-14', status: 'PRESENT' })
     await checkIn({ delegateId, day: '2026-03-15', status: 'ABSENT' })

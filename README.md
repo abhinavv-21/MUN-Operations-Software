@@ -1,6 +1,12 @@
-# MUN Operations Software
+# Bloc
 
-Multi-tenant SaaS that runs the operations of a Model UN conference: committees, country matrix, delegates, registrations, allocations, logistics, attendance, awards, exports and an audit log.
+**A Model United Nations conference management software.**
+
+Bloc is built for the **organising committee**, not the executive board. Almost everything else in
+this space is a committee tool — a speakers list, a motion queue, a caucus timer — which is one room
+for three days. Bloc is the conference around those rooms: registrations, the country matrix,
+allocations, the registration desk at 08:40, logistics, attendance, awards, exports and an audit
+log, for one conference or for every edition a society has ever run.
 
 Anyone signs up and gets an **organisation**.
 An organisation runs one or more **conferences**.
@@ -10,17 +16,25 @@ The single-tenant predecessor that served a real conference is [lrimunx](https:/
 
 ---
 
-## The five invariants
+## The eleven invariants
 
-These are the things that decay silently, so each has a mechanism rather than a convention.
+These are the things that decay silently, so each has a mechanism rather than a convention. The
+full list, with the command that proves each one, is in
+[`docs/02-INVARIANTS.md`](docs/02-INVARIANTS.md).
 
 | | Invariant | What holds it up |
 | --- | --- | --- |
 | 1 | Every API failure is `{ error, code, details? }` | `src/server/errors.ts`, enforced by `withApi` and `tests/api.contract.test.ts` |
 | 2 | No module outside `src/server/db.ts` touches the raw client | `no-restricted-imports` on `unsafeDb`, plus a raw-SQL ban |
 | 3 | Authorization lives in the service layer, not the route handler | Services take `ctx` and never see a `Request` |
-| 4 | No arbitrary colour values in Tailwind | Stage 3 adds the CI grep |
-| 5 | Tests skip with a printed reason when Postgres is unreachable | `tests/setup.ts`, which also *fails* rather than skips when `CI` is set |
+| 4 | No arbitrary colour values | `scripts/check-no-arbitrary-colors.mjs`, wired into `npm run lint` |
+| 5 | Tests skip with a printed reason when Postgres is unreachable | `tests/setup.ts`, which *fails* rather than skips when `CI` is set |
+| 6 | Every Prisma model is classified as tenant, org or global | `tests/models.coverage.test.ts` |
+| 7 | Every migration that adds a table enables RLS | The repeated `DO $$` block, asserted by `tests/security.rls.test.ts` |
+| 8 | Browser env values are read as literal `process.env.NEXT_PUBLIC_*` | `tests/client-env.test.ts`, which reads the source |
+| 9 | Every mutating admin route writes an `AuditLog` row | `tests/audit.manifest.test.ts`, in three layers |
+| 10 | The offline queue holds exactly two writes | `src/lib/offline/policy.ts` and `tests/offline.policy.test.ts` |
+| 11 | The content security policy is verified in a browser | `scripts/csp-check.mjs` — no server-side check can see it |
 
 ## Getting started
 

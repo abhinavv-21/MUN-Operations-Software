@@ -153,7 +153,7 @@ export function SettingsClient({
         />
 
         <form onSubmit={saveIdentity} className="flex flex-col gap-4">
-          {identityError ? <ErrorState message={identityError} /> : null}
+          {identityError ? <ErrorState title="That did not save" message={identityError} /> : null}
 
           <Field label="Name" required>
             {({ id }) => (
@@ -228,7 +228,7 @@ export function SettingsClient({
           }
         />
 
-        {brandingError ? <ErrorState message={brandingError} /> : null}
+        {brandingError ? <ErrorState title="That did not save" message={brandingError} /> : null}
 
         {!usage.customBranding ? (
           <p className="mb-4 rounded-card border border-edge bg-surface-sunken p-4 text-body-sm text-ink-secondary">

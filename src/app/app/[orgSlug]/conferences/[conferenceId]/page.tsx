@@ -51,8 +51,7 @@ export default async function ConferenceDashboardPage({ params }: { params: Prom
       <PageHeader
         title={conference.name}
         description={
-          conference.venue ??
-          'Add dates, venue and fee in conference settings — arriving in the next stage.'
+          conference.venue ?? 'Add the dates, venue and fee in conference settings.'
         }
         actions={
           <Button asChild>
@@ -64,7 +63,7 @@ export default async function ConferenceDashboardPage({ params }: { params: Prom
         }
       />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Stat
           label={`Present today`}
           value={attendance.present + attendance.late}
@@ -135,6 +134,7 @@ export default async function ConferenceDashboardPage({ params }: { params: Prom
                 total={attendance.total}
                 label="Marked present"
                 unit="delegates"
+                intent="progress"
               />
               <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[

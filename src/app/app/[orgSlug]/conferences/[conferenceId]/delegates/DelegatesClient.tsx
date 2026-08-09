@@ -9,6 +9,7 @@ import { CapacityMeter, Card, CardHeader } from '@/components/ui/Card.tsx'
 import { DataTable, type Column } from '@/components/ui/DataTable.tsx'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field.tsx'
 import { Modal } from '@/components/ui/Modal.tsx'
+import { ConfirmDialog } from '@/components/app/ConfirmDialog.tsx'
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/States.tsx'
 import { ApiError, apiFetch, errorMessage } from '@/lib/api.ts'
 import { invalidateCommittees } from '@/lib/invalidation.ts'
@@ -61,6 +62,7 @@ export function DelegatesClient({
   const [matrixCsv, setMatrixCsv] = useState('')
   const [matrixSummary, setMatrixSummary] = useState<MatrixSummary | null>(null)
   const [editing, setEditing] = useState<Delegate | null>(null)
+  const [unallocating, setUnallocating] = useState<Delegate | null>(null)
   const [edit, setEdit] = useState({ fullName: '', email: '', phone: '', schoolName: '', grade: '' })
 
   const filters = { search: search || undefined, allocation }
@@ -124,7 +126,10 @@ export function DelegatesClient({
   const unallocate = useMutation({
     mutationFn: (delegateId: string) =>
       apiFetch(`${base}/allocations/${delegateId}`, { method: 'DELETE' }),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setUnallocating(null)
+      refresh()
+    },
   })
 
   const importMatrix = useMutation({
@@ -177,6 +182,8 @@ export function DelegatesClient({
     {
       key: 'actions',
       header: 'Actions',
+      // Right-aligned buttons want a right-aligned header.
+      align: 'right' as const,
       render: (row) => {
         if (!canEdit) return null
         return (
@@ -215,7 +222,7 @@ export function DelegatesClient({
                 variant="ghost"
                 size="icon"
                 aria-label={`Remove allocation for ${row.fullName}`}
-                onClick={() => unallocate.mutate(row.id)}
+                onClick={() => setUnallocating(row)}
               >
                 <X size={16} aria-hidden />
               </Button>
@@ -230,6 +237,7 @@ export function DelegatesClient({
     <div className="flex flex-col gap-6">
       {mutationError ? (
         <ErrorState
+          title="That did not save"
           message={errorMessage(mutationError)}
           offline={mutationError instanceof ApiError && mutationError.isOffline}
         />
@@ -422,6 +430,27 @@ export function DelegatesClient({
               the second one. */}
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={unallocating !== null}
+        onOpenChange={(open) => {
+          if (!open) setUnallocating(null)
+        }}
+        title={unallocating ? `Remove ${unallocating.fullName} from their seat?` : 'Remove allocation'}
+        description={
+          unallocating?.assignment
+            ? `${unallocating.fullName} currently holds ${unallocating.assignment.country} in ${unallocating.assignment.committee.code}.`
+            : ''
+        }
+        // Not typed: this is one click to redo. But it is also not nothing —
+        // the country goes back into the pool and somebody else can take it
+        // while the secretariat is still looking at the screen.
+        consequence="The country goes back into the pool and can be allocated to somebody else straight away."
+        confirmLabel="Remove allocation"
+        busy={unallocate.isPending}
+        error={unallocate.error ? errorMessage(unallocate.error) : null}
+        onConfirm={() => unallocating && unallocate.mutate(unallocating.id)}
+      />
 
       <Modal
         open={editing !== null}

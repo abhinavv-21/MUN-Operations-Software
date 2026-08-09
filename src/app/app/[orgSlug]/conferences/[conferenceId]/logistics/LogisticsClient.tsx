@@ -205,6 +205,8 @@ export function LogisticsClient({
     {
       key: 'actions',
       header: 'Actions',
+      // Right-aligned buttons want a right-aligned header.
+      align: 'right' as const,
       render: (row) => {
         if (!canResolve) return null
         if (row.status === 'RESOLVED' || row.status === 'CANCELLED') {
@@ -250,6 +252,7 @@ export function LogisticsClient({
     <div className="flex flex-col gap-6">
       {mutationError ? (
         <ErrorState
+          title="That did not save"
           message={errorMessage(mutationError)}
           offline={mutationError instanceof ApiError && mutationError.isOffline}
         />

@@ -129,6 +129,7 @@ export function AwardsClient({
     <div className="flex flex-col gap-6">
       {mutationError ? (
         <ErrorState
+          title="That did not save"
           message={errorMessage(mutationError)}
           offline={mutationError instanceof ApiError && mutationError.isOffline}
         />

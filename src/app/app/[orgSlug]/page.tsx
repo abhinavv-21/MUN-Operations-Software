@@ -1,9 +1,12 @@
+import Link from 'next/link'
 import { CalendarDays } from 'lucide-react'
+import { Button } from '@/components/ui/Button.tsx'
 import { Card, CardHeader, Stat } from '@/components/ui/Card.tsx'
 import { PageHeader } from '@/components/ui/PageHeader.tsx'
 import { EmptyState } from '@/components/ui/States.tsx'
 import { RoleBadge } from '@/components/ui/Badge.tsx'
 import { requireOrg } from '@/server/ctx.ts'
+import { computeUsage } from '@/server/limits.ts'
 import { pageCtx } from '@/server/page-ctx.ts'
 
 export async function generateMetadata({ params }: { params: Promise<{ orgSlug: string }> }) {
@@ -23,12 +26,18 @@ export default async function OrgOverviewPage({
 
   // ctx.db is already organisation-scoped, so there is no `where` to forget and
   // no way for this to see another organisation's rows.
-  const [conferences, memberCount] = await Promise.all([
+  const organization = await ctx.db.organization.findUniqueOrThrow({
+    where: { id: membership.organizationId },
+    select: { planKey: true, planLimits: true },
+  })
+
+  const [conferences, memberCount, usage] = await Promise.all([
     ctx.db.conference.findMany({
       select: { id: true, name: true, slug: true, status: true },
       orderBy: { createdAt: 'desc' },
     }),
     ctx.db.membership.count(),
+    computeUsage(ctx.db, organization),
   ])
 
   return (
@@ -42,7 +51,14 @@ export default async function OrgOverviewPage({
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Stat label="Conferences" value={conferences.length} emphasis />
         <Stat label="People" value={memberCount} hint="Members of this organisation" />
-        <Stat label="Plan" value="Free" hint="Up to 2 conferences" />
+        {/* Read from the plan, not written out. The settings screen already
+            showed the real one, so an organisation whose limit had been raised
+            saw two different answers on two screens. */}
+        <Stat
+          label={`${usage.planLabel} plan`}
+          value={`${usage.conferences.current} / ${usage.conferences.max}`}
+          hint="Conferences included"
+        />
       </div>
 
       <Card>
@@ -64,8 +80,13 @@ export default async function OrgOverviewPage({
         ) : (
           <EmptyState
             icon={CalendarDays}
-            title="No conferences yet"
-            description="Creating and configuring conferences arrives in the next stage."
+            title="Create your first conference"
+            description="A conference holds its own committees, delegates and allocations. Your society can run as many as it needs, and last year's stays exactly as it finished."
+            action={
+              <Button asChild>
+                <Link href={`/app/${orgSlug}/conferences`}>New conference</Link>
+              </Button>
+            }
           />
         )}
       </Card>

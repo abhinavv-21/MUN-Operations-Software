@@ -8,7 +8,7 @@ import { listMembershipsForUser } from '../scope-resolution.ts'
 import { requireOrg, requireUser, type Ctx } from '../ctx.ts'
 import { isOrgAdmin } from '../auth/membership.ts'
 import { assertFeature, computeUsage, type Usage } from '../limits.ts'
-import { parseTheme, PRESET_SEEDS, type Theme } from '@/lib/theme/schema.ts'
+import { parseTheme, PRESET_SEEDS, withPreset, type Theme, type ThemeInput } from '@/lib/theme/schema.ts'
 import { revalidateOrganizationTheme } from './theme.ts'
 
 /**
@@ -275,7 +275,7 @@ export async function updateOrganization(ctx: Ctx, input: UpdateOrganizationInpu
  * nothing reading it. Choosing a preset and leaving its colours alone is not a
  * custom brand, so the free plan is not blocked from picking navy.
  */
-export async function updateOrganizationBranding(ctx: Ctx, theme: Theme) {
+export async function updateOrganizationBranding(ctx: Ctx, input: ThemeInput) {
   const membership = requireOrganizationAdmin(ctx)
 
   const organization = await ctx.db.organization.findUniqueOrThrow({
@@ -283,11 +283,23 @@ export async function updateOrganizationBranding(ctx: Ctx, theme: Theme) {
     select: { planKey: true, planLimits: true, defaultTheme: true },
   })
 
-  const presetSeed = PRESET_SEEDS[theme.preset]
+  /*
+    Only a colour the caller actually sent counts as customising.
+
+    An absent seed means "use the preset", so comparing it against the preset
+    would gate `{ "preset": "navy" }` — a plan-included choice — as if it were a
+    custom palette.
+  */
+  const presetSeed = PRESET_SEEDS[input.preset]
   const customised = (Object.keys(presetSeed) as (keyof typeof presetSeed)[]).some(
-    (key) => theme.seed[key] !== presetSeed[key],
+    (key) => input.seed[key] !== undefined && input.seed[key] !== presetSeed[key],
   )
   if (customised) assertFeature(organization, 'customBranding')
+
+  // Stored resolved, so the row is a complete description of what is rendered
+  // and a later change to a preset's colours cannot silently restyle a
+  // conference that has already run.
+  const theme: Theme = withPreset(input)
 
   await ctx.db.organization.update({
     where: { id: membership.organizationId },

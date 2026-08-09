@@ -111,6 +111,7 @@ export function ConferencesClient({
 
       {conferences.isError ? (
         <ErrorState
+          title="That did not save"
           message={errorMessage(conferences.error)}
           offline={conferences.error instanceof ApiError && conferences.error.isOffline}
           onRetry={() => void conferences.refetch()}

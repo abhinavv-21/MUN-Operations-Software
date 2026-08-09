@@ -66,21 +66,31 @@
   --color-edge-strong: var(--t-edge-strong);
   --color-focus: var(--t-focus);
 
-  /* The seven locals a ground class republishes. Sections read these and
-     never a literal, which is what makes a ground flip incapable of
-     stranding text at 1.02:1. */
-  --color-ground: var(--ground);
-  --color-on-ground: var(--on-ground);
-  --color-on-ground-muted: var(--on-ground-muted);
-  --color-hairline: var(--hairline);
-  --color-focus-ring: var(--focus-ring);
-  --color-accent-on-ground: var(--accent-on-ground);
-  --color-border-interactive: var(--border-interactive);
-
   /* ---- Type ------------------------------------------------------------ */
   --font-heading: var(--t-font-heading);
   --font-sans: var(--t-font-body);
   --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+
+  /* ---- Marketing scale -------------------------------------------------
+     Three sizes that exist only outside the product. The application's scale
+     tops out at 40px because a dashboard read at arm's length does not want a
+     headline; a landing page read once, at a decision, does.
+
+     Fluid rather than stepped at breakpoints. A `clamp()` has no jump to get
+     wrong, and the hero is the one element where a 390px phone and a 1440px
+     laptop genuinely want different sizes rather than the same size twice. */
+  --text-hero: clamp(2.75rem, 6.6vw, 5.25rem);
+  --text-hero--line-height: 0.96;
+  --text-hero--font-weight: 700;
+  --text-hero--letter-spacing: -0.035em;
+
+  --text-title: clamp(1.875rem, 3.4vw, 2.875rem);
+  --text-title--line-height: 1.06;
+  --text-title--font-weight: 700;
+  --text-title--letter-spacing: -0.028em;
+
+  --text-lead: clamp(1.0625rem, 1.15vw, 1.1875rem);
+  --text-lead--line-height: 1.55;
 
   --text-display: 40px;
   --text-display--line-height: 1.1;
@@ -125,6 +135,11 @@
 
   --container-prose: 68ch;
   --container-app: 1440px;
+  /* Marketing measure. Narrower than the app shell, because a line of prose
+     that runs 1440px wide is a line nobody finishes. */
+  --container-page: 1180px;
+  /* The hero copy column, sized so the headline breaks where it is meant to. */
+  --container-hero: 20ch;
 
   --breakpoint-xs: 390px;
 
@@ -162,6 +177,50 @@
       opacity: 1;
     }
   }
+}
+
+/* ==========================================================================
+   The ground vocabulary — and why this block says `inline`
+
+   These seven are the locals a `.ground-*` class republishes, and they are the
+   one part of the token set whose value depends on *where in the document* it
+   is read. That makes them the one part that cannot go in the block above.
+
+   A plain `@theme` entry is emitted by Tailwind into `:root`:
+
+       :root { --color-hairline: var(--hairline); }
+
+   A custom property is substituted at computed-value time **on the element it
+   is declared on**. `--hairline` does not exist on `:root` — it is declared by
+   the ground classes below — so that resolves to the guaranteed-invalid value
+   at the root, and every descendant inherits the invalid value. Entering a
+   `.ground-ink` later does not repair it, because the alias was already
+   computed.
+
+   The failure was silent for two stages and looked like nothing, because a
+   ground class also sets `color` on itself, so text inside one was the right
+   colour anyway. What was actually lost was every *distinction*:
+   `text-on-ground-muted` rendered identical to `text-on-ground`, and
+   `border-hairline` rendered as a full-strength ink rule rather than a hairline.
+   Found by a designer measuring `getComputedStyle` instead of trusting the
+   class name — the same lesson as trap 5.
+
+   `@theme inline` writes the value into the utility itself:
+
+       .border-hairline { border-color: var(--hairline); }
+
+   which is resolved on the element that carries the class, inside the ground,
+   where `--hairline` exists.
+   ========================================================================== */
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-on-ground: var(--on-ground);
+  --color-on-ground-muted: var(--on-ground-muted);
+  --color-hairline: var(--hairline);
+  --color-focus-ring: var(--focus-ring);
+  --color-accent-on-ground: var(--accent-on-ground);
+  --color-border-interactive: var(--border-interactive);
 }
 
 /* Named durations. Tailwind 4 has no `--duration-*` namespace, and the ported
@@ -322,6 +381,63 @@
     animation: var(--animate-shimmer);
   }
 
+  /* ------------------------------------------------------------------
+     The country matrix — the landing page's one signature element.
+
+     A grid of committees against the countries each has to fill. It is the
+     central document of every conference and the thing an organising committee
+     recognises before they have read a word, which is why it carries the hero
+     rather than a product screenshot.
+
+     Every colour here is a token, so the matrix re-themes with the rest of the
+     product: it is the same object in navy or forest that it is in magenta.
+     ------------------------------------------------------------------ */
+
+  .matrix-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    border: 1px solid var(--color-edge);
+    background-color: var(--color-surface);
+    /* `ink-secondary`, not `ink-tertiary`.
+
+       Tertiary is derived to the 3:1 UI threshold — it is for placeholders and
+       disabled controls, and these are country codes somebody is meant to read.
+       At 11px it measured 3.01:1 and cost the landing page four accessibility
+       points. The empty/allocated distinction is carried by the fill, the border
+       and the weight, so it survives the text being legible. */
+    color: var(--color-ink-secondary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    /* `both`, so the cell is in its from-state during the delay rather than
+       flashing at full opacity and then animating. */
+    animation: cell-settle 460ms var(--ease-standard) both;
+  }
+
+  /* An allocated seat. The accent wash rather than the accent itself: sixty
+     saturated cells would shout the theme instead of showing it, and the
+     filled/empty distinction has to survive being re-themed to slate. */
+  .matrix-cell[data-filled='true'] {
+    border-color: color-mix(in oklab, var(--color-accent) 34%, transparent);
+    background-color: var(--color-accent-wash);
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+
+  @keyframes cell-settle {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   /* Horizontal scroll is permitted inside a table container, never on body. */
   .table-scroll {
     overflow-x: auto;
@@ -337,5 +453,14 @@
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Duration is not the whole story. The matrix staggers sixty cells with
+     `animation-delay`, and collapsing the duration alone would still leave
+     somebody who asked for less motion watching an empty grid fill itself over
+     a second and a half. The animation is removed outright, so the matrix is
+     simply there. */
+  .matrix-cell {
+    animation: none !important;
   }
 }

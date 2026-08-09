@@ -204,6 +204,8 @@ export function MembersClient({
     {
       key: 'actions',
       header: 'Actions',
+      // Right-aligned buttons want a right-aligned header.
+      align: 'right' as const,
       render: (member) => {
         const isLastOwner = member.role === 'OWNER' && ownerCount === 1
         // Omitted rather than disabled where it cannot apply at all.
@@ -235,7 +237,7 @@ export function MembersClient({
 
   return (
     <div className="flex flex-col gap-6">
-      {error ? <ErrorState message={error} /> : null}
+      {error ? <ErrorState title="That did not save" message={error} /> : null}
 
       <Card className="p-0 md:p-0">
         <div className="p-5 pb-0 md:p-6 md:pb-0">

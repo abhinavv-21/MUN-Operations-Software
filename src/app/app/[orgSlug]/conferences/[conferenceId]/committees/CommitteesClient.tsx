@@ -9,6 +9,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable.tsx'
 import { Field, Input, Textarea } from '@/components/ui/Field.tsx'
 import { SaveIndicator, type SaveState } from '@/components/ui/SaveIndicator.tsx'
 import { Modal } from '@/components/ui/Modal.tsx'
+import { ConfirmDialog } from '@/components/app/ConfirmDialog.tsx'
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/States.tsx'
 import { ApiError, apiFetch, errorMessage } from '@/lib/api.ts'
 import { invalidateCommittees } from '@/lib/invalidation.ts'
@@ -44,6 +45,18 @@ export function CommitteesClient({
 
   const [matrixFor, setMatrixFor] = useState<Committee | null>(null)
   const [countryText, setCountryText] = useState('')
+  /**
+   * Whether the committee's current matrix has actually been read.
+   *
+   * `PUT /countries` replaces the whole list, and an empty textarea is a valid
+   * instruction meaning "unconstrained". So a failed or slow fetch used to
+   * present an empty box that looked exactly like a committee with no matrix,
+   * and one click of Save erased a hand-built sixty-country list with no
+   * confirmation and no undo. Nothing may be saved until the current list is on
+   * screen.
+   */
+  const [matrixState, setMatrixState] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [deleting, setDeleting] = useState<Committee | null>(null)
 
   /** Per-row save state for the inline seat editor, keyed by committee id. */
   const [seatState, setSeatState] = useState<Record<string, SaveState>>({})
@@ -95,7 +108,10 @@ export function CommitteesClient({
   const remove = useMutation({
     mutationFn: (committeeId: string) =>
       apiFetch<{ deleted: true }>(`${base}/${committeeId}`, { method: 'DELETE' }),
-    onSuccess: () => invalidateCommittees(client, orgSlug, conferenceId),
+    onSuccess: () => {
+      setDeleting(null)
+      invalidateCommittees(client, orgSlug, conferenceId)
+    },
   })
 
   const setCountries = useMutation({
@@ -114,12 +130,23 @@ export function CommitteesClient({
   async function openMatrix(committee: Committee) {
     setMatrixFor(committee)
     setCountryText('')
-    const body = await apiFetch<{ countries: { country: string; seats: number }[] }>(
-      `${base}/${committee.id}/countries`,
-    ).catch(() => ({ countries: [] }))
-    setCountryText(
-      body.countries.map((row) => (row.seats > 1 ? `${row.country} x${row.seats}` : row.country)).join('\n'),
-    )
+    setMatrixState('loading')
+
+    try {
+      const body = await apiFetch<{ countries: { country: string; seats: number }[] }>(
+        `${base}/${committee.id}/countries`,
+      )
+      setCountryText(
+        body.countries
+          .map((row) => (row.seats > 1 ? `${row.country} x${row.seats}` : row.country))
+          .join('\n'),
+      )
+      setMatrixState('ready')
+    } catch {
+      // Deliberately not `.catch(() => ({ countries: [] }))`. Swallowing the
+      // failure into an empty list is what made this destructive.
+      setMatrixState('failed')
+    }
   }
 
   const columns: Column<Committee>[] = [
@@ -176,6 +203,8 @@ export function CommitteesClient({
     {
       key: 'actions',
       header: 'Actions',
+      // Right-aligned buttons want a right-aligned header.
+      align: 'right' as const,
       render: (committee) =>
         canEdit ? (
           <div className="flex justify-end gap-1">
@@ -186,7 +215,7 @@ export function CommitteesClient({
               variant="ghost"
               size="icon"
               aria-label={`Delete ${committee.code}`}
-              onClick={() => remove.mutate(committee.id)}
+              onClick={() => setDeleting(committee)}
             >
               <Trash2 size={16} aria-hidden />
             </Button>
@@ -201,6 +230,7 @@ export function CommitteesClient({
     <div className="flex flex-col gap-6">
       {mutationError ? (
         <ErrorState
+          title="That did not save"
           message={errorMessage(mutationError)}
           offline={mutationError instanceof ApiError && mutationError.isOffline}
         />
@@ -322,6 +352,33 @@ export function CommitteesClient({
         </form>
       </Modal>
 
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title={deleting ? `Delete ${deleting.code}?` : 'Delete committee'}
+        description={
+          deleting
+            ? `${deleting.name} and everything filed under it will be removed.`
+            : ''
+        }
+        consequence={
+          deleting
+            ? `Its country matrix${
+                deleting.countryCount > 0 ? ` of ${deleting.countryCount} countries` : ''
+              }, every allocation in it and every award given in it go too. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Delete committee"
+        // Typed, because this is the one row action that cascades. The trash
+        // icon sits four pixels from "Matrix".
+        confirmPhrase={deleting?.code}
+        busy={remove.isPending}
+        error={remove.error ? errorMessage(remove.error) : null}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+      />
+
       <Modal
         open={matrixFor !== null}
         onOpenChange={(open) => {
@@ -337,8 +394,10 @@ export function CommitteesClient({
             </Button>
             <Button
               loading={setCountries.isPending}
+              // Nothing may replace a matrix that was never read.
+              disabled={matrixState !== 'ready'}
               onClick={() => {
-                if (!matrixFor) return
+                if (!matrixFor || matrixState !== 'ready') return
                 const countries = countryText
                   .split('\n')
                   .map((line) => line.trim())
@@ -357,17 +416,34 @@ export function CommitteesClient({
           </>
         }
       >
-        <Field label="Countries">
-          {({ id }) => (
-            <Textarea
-              id={id}
-              rows={12}
-              value={countryText}
-              onChange={(event) => setCountryText(event.target.value)}
-              placeholder={'France\nJapan\nBrazil x2'}
-            />
-          )}
-        </Field>
+        {matrixState === 'failed' ? (
+          <ErrorState
+            message="The current matrix could not be read, so it cannot be replaced from here. Check your connection and reopen this."
+            onRetry={() => matrixFor && void openMatrix(matrixFor)}
+          />
+        ) : (
+          <Field
+            label="Countries"
+            hint={
+              matrixState === 'loading'
+                ? 'Reading the current matrix…'
+                : 'Saving replaces the whole list. An empty list leaves the committee unconstrained.'
+            }
+          >
+            {({ id, describedBy }) => (
+              <Textarea
+                id={id}
+                rows={12}
+                value={countryText}
+                aria-describedby={describedBy}
+                aria-busy={matrixState === 'loading'}
+                disabled={matrixState === 'loading'}
+                onChange={(event) => setCountryText(event.target.value)}
+                placeholder={'France\nJapan\nBrazil x2'}
+              />
+            )}
+          </Field>
+        )}
       </Modal>
     </div>
   )

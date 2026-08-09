@@ -1,5 +1,5 @@
 {
-  "name": "mun-operations-software",
+  "name": "bloc",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -19,6 +19,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
+    "db:seed": "node --experimental-strip-types --env-file=.env prisma/seed.ts",
     "db:deploy:remote": "node scripts/migrate-remote.mjs",
     "check:colors": "node scripts/check-no-arbitrary-colors.mjs"
   },

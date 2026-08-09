@@ -38,6 +38,28 @@ come from — a database row rather than a hex literal in a config file.
 
 ---
 
+## Two type scales, and why
+
+The product's scale tops out at 40px (`text-display`), because a dashboard read at arm's length all
+day does not want a headline. The marketing pages have their own three sizes on top of it:
+
+| Token | Size | Where |
+| --- | --- | --- |
+| `text-hero` | `clamp(2.75rem, 6.6vw, 5.25rem)` | one per page — the landing headline |
+| `text-title` | `clamp(1.875rem, 3.4vw, 2.875rem)` | marketing section headings |
+| `text-lead` | `clamp(1.0625rem, 1.15vw, 1.1875rem)` | the paragraph under a hero or title |
+
+Fluid rather than stepped at breakpoints. A `clamp()` has no jump to get wrong, and the hero is the
+one element where a 390px phone and a 1440px laptop genuinely want different sizes rather than the
+same size twice.
+
+**Any new named size must be registered in `src/lib/utils.ts`.** `tailwind-merge` treats
+`text-<name>` as a *colour* unless it knows the name is a font size, so an unregistered
+`text-hero` beside `text-ink` silently deletes one of them. That is trap 5, and it cost a contrast
+failure on every primary button once already.
+
+---
+
 ## Ground classes
 
 Five: `.ground-app`, `.ground-paper`, `.ground-ink`, `.ground-blush`, `.ground-brand`.
@@ -51,6 +73,28 @@ ground was 1.02:1, and the ground class is what makes writing that impossible.
 
 On `.ground-brand` the accent *is* the background, so `--accent-on-ground` resolves to the readable
 text colour instead.
+
+### Using them: the landing page is the proof
+
+The grounds existed from Stage 3 and were used on almost nothing until Stage 9. The landing page now
+moves through four of the five, and that progression *is* its visual rhythm:
+
+```
+hero            .ground-app      light, the matrix
+the difference  .ground-ink      dark — the one tonal event on the page
+the three hours (default)        light again, so the dark section reads as a break
+two promises    .ground-blush    tinted
+conversion      .ground-brand    saturated, once, at the only place it converts
+```
+
+Two rules that are easy to get wrong inside a ground:
+
+- **Use `text-on-ground` and `text-on-ground-muted`, never `text-ink`.** The ground republishes
+  seven locals precisely so that a section can be dark without any of its text having to know. A
+  `text-ink` inside `.ground-ink` is near-black on near-black.
+- **Use `border-hairline`, not `border-edge`**, for the same reason.
+
+`.ground-brand` is for one conversion point per page. Two saturated sections is none.
 
 ---
 

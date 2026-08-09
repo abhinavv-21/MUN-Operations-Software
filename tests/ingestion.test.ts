@@ -131,9 +131,9 @@ describe('the webhook secret', () => {
   })
 
   it('bakes the URL and secret into the script the organiser pastes', () => {
-    const script = generateAppsScript('https://munopshub.vercel.app/api/integrations/x/1', 'sekret')
+    const script = generateAppsScript('https://bloc.example/api/integrations/x/1', 'sekret')
 
-    expect(script).toContain('"https://munopshub.vercel.app/api/integrations/x/1"')
+    expect(script).toContain('"https://bloc.example/api/integrations/x/1"')
     expect(script).toContain('"sekret"')
     expect(script).toContain('X-Webhook-Secret')
     // Failure has to surface in the Apps Script execution log, not vanish.
@@ -180,7 +180,7 @@ describeWithDb('the Google Sheets webhook', () => {
     )
     const response = await POST(
       new Request(
-        `https://munopshub.test/api/orgs/zz-alpha/conferences/${conferenceId}/integrations/google-sheets`,
+        `https://bloc.test/api/orgs/zz-alpha/conferences/${conferenceId}/integrations/google-sheets`,
         { method: 'POST' },
       ),
       { params: Promise.resolve({ orgSlug: 'zz-alpha', conferenceId }) },
@@ -193,7 +193,7 @@ describeWithDb('the Google Sheets webhook', () => {
       '../src/app/api/integrations/google-sheets/[conferenceId]/route.ts'
     )
     return POST(
-      new Request(`https://munopshub.test/api/integrations/google-sheets/${conferenceId}`, {
+      new Request(`https://bloc.test/api/integrations/google-sheets/${conferenceId}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-webhook-secret': secret },
         body: JSON.stringify({ csv }),

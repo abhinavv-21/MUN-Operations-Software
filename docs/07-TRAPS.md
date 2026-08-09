@@ -277,6 +277,98 @@ group. Two tools now disagreeing is a signal to check they are looking at the sa
 Turbopack build then failed with an unrelated-looking CSS parse error pointing at `globals.css`.
 Lighthouse now runs from outside the repository.
 
+### 18. A queued check-in was destroyed after 105 seconds offline — *Stage 9*
+
+**The worst defect this product has had.** Silent, and it shipped.
+
+`classifyAttempt` counted a `code: 0` outcome — *nothing came back* — against
+`MAX_ATTEMPTS = 8`, and `run()` deleted the entry on `drop`. The flush poll fires
+every fifteen seconds and makes exactly one attempt on the head of the queue, so
+eight attempts is a hundred and five seconds. Two minutes without signal in a
+basement committee room destroyed every queued check-in and every queued
+logistics request — the precise scenario the queue exists for, and the one
+written on the landing page. The only trace was `lastDrop`, one dismissable
+string naming no delegate.
+
+**Why the Stage 7 proof missed it.** `scripts/e2e-offline.mjs` went offline for a
+few *seconds*. Being offline was tested; being offline for a **while** was not.
+Duration was the variable and it was never varied.
+
+**Fix:** a request that got no answer is never dropped. `drop` now requires the
+server to have actually responded — a 422 is information, silence is not. The
+attempt counter still increments, for the age display, but can never reach a
+verdict.
+
+**Proven twice by reverting:** the unit test goes red at attempt 7, and the
+browser check now stays offline for seventy seconds and asserts both writes
+survive.
+
+**Lesson:** "we tested the offline path" is not the same claim as "we tested
+being offline for as long as a real outage lasts". When a feature's whole
+premise is a duration, the test has to have a duration in it.
+
+### 19. Every ground-vocabulary utility was inert — *Stage 9*
+
+`tokens.css` published the seven ground locals as plain `@theme`:
+
+```css
+@theme { --color-hairline: var(--hairline); }
+```
+
+Tailwind emits that into `:root`, where `--hairline` does not exist — it is
+declared by the `.ground-*` classes further down. A custom property is
+substituted at computed-value time **on the element it is declared on**, so it
+resolved to the guaranteed-invalid value at the root, and every descendant
+inherited the invalid value. Entering a ground later did not repair it.
+
+So `text-on-ground-muted`, `border-hairline`, `text-accent-on-ground` and three
+others did nothing, product-wide, for two stages.
+
+**It looked fine**, which is why it survived: a ground class also sets `color` on
+itself, so text inside one was already the right colour. What was lost was every
+*distinction* — muted text rendered identical to primary text, and a hairline
+rendered as a full-strength ink rule.
+
+**Fix:** those seven live in their own `@theme inline` block, which writes the
+value into the utility rather than through a `:root` alias.
+
+**Found by two independent designers measuring `getComputedStyle` instead of
+trusting the class name** — the same lesson as trap 5, which was also a class
+that was present in the source and absent from the render. Read the rendered
+output.
+
+### 20. Choosing a theme preset did nothing — *Stage 9*
+
+`themeSchema.parse({ preset: 'forest' })` returned the **magenta** seed.
+
+The four seed fields carried magenta as per-field `.default(...)`, and the object
+carried `.prefault({})` — which feeds the value through the schema rather than
+handing it back, so parsing always produced four explicit colours. `withPreset`
+spreads the seed *over* the preset, so that an override wins; with an explicit
+seed always present, a preset could never apply.
+
+Nothing in the product noticed, because the settings form always sends four
+explicit colours. An API caller sending `{ "preset": "navy" }`, or a row edited
+by hand, silently got magenta.
+
+**Fix:** the seeds are optional, and `withPreset` fills each absent one from the
+preset field by field — a spread cannot tell an explicit value from a filled-in
+one. **Proven by reverting:** four of the five presets come back magenta.
+
+### 21. Colour asserted the opposite of what had happened — *Stage 9*
+
+`CapacityMeter` turned the attendance register **amber at 93% marked and red at
+100%**. Its thresholds were written for a ceiling — a committee at 15 of 15 seats
+can take nobody else — and the register was reusing them for a target, where
+reaching the end is the best possible morning.
+
+**Fix:** an `intent` of `capacity` or `progress`. Two meanings, two scales, one
+component.
+
+**Lesson:** a shared component's *semantics* travel with it, not just its markup.
+Reusing it somewhere the meaning inverts is a bug even when every pixel is
+correct.
+
 ---
 
 ## Process

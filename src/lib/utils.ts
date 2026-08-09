@@ -21,7 +21,27 @@ import { extendTailwindMerge } from 'tailwind-merge'
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
-      'font-size': [{ text: ['display', 'h1', 'h2', 'h3', 'body', 'body-sm', 'label', 'data'] }],
+      'font-size': [
+        {
+          text: [
+            // Marketing. Registered here for the same reason as the rest: a
+            // named size that tailwind-merge does not know is treated as a
+            // colour, and silently deletes the real colour beside it.
+            'hero',
+            'title',
+            'lead',
+            // Product.
+            'display',
+            'h1',
+            'h2',
+            'h3',
+            'body',
+            'body-sm',
+            'label',
+            'data',
+          ],
+        },
+      ],
       rounded: [{ rounded: ['control', 'card', 'pill'] }],
       shadow: [{ shadow: ['raised', 'overlay'] }],
     },

@@ -1,0 +1,85 @@
+/* ==========================================================================
+   marketing.css — the few rules the public pages need that are not a Tailwind
+   utility. Imported once, by the marketing layout, so the application ships
+   none of it.
+
+   Every colour in here is a token. There is no literal, and the CI colour
+   check reads this file.
+   ========================================================================== */
+
+
+
+/* --------------------------------------------------------------------------
+   The matrix band.
+
+   The country matrix is the landing page's signature, and the version it
+   replaced was a five-column widget sitting in a column beside an 84px
+   headline — a thumbnail of a document rather than the document. This one is
+   fourteen committees wide, which is wider than any monitor, and it is
+   supposed to be: an organising committee's matrix has never once fitted on a
+   screen. The grid runs off the right-hand edge and dissolves there.
+
+   Left edge, though, is exact. It lines up with the headline above it, which
+   is why the padding is derived from the page container rather than set to a
+   gutter that only happens to match at one width.
+   -------------------------------------------------------------------------- */
+
+.matrix-band {
+  overflow: hidden;
+  /* `black` and `transparent` are alpha stops in a mask, not colour. A mask
+     discards hue entirely — this decides how much of the grid is painted,
+     never what it is painted in, so it survives every re-theme untouched.
+
+     Proportional rather than a fixed pixel fade, so a 390px phone gives up the
+     same fraction of the grid a 1920px monitor does. */
+  -webkit-mask-image: linear-gradient(to right, black 0 80%, transparent 98%);
+  mask-image: linear-gradient(to right, black 0 80%, transparent 98%);
+}
+
+.matrix-grid {
+  display: grid;
+  /* Column-major, because a matrix column is a committee. `max-content` so the
+     grid keeps its natural width and overflows the container rather than
+     squeezing fourteen committees into a phone. */
+  grid-auto-flow: column;
+  grid-auto-columns: clamp(5.25rem, 6.2vw, 6.75rem);
+  gap: 8px;
+  width: max-content;
+  align-items: start;
+}
+
+/* An open seat and an allocated one differ by more than a tint.
+
+   The shared `.matrix-cell` in tokens.css is tuned for the product, where the
+   grid is small and dense; at landing-page scale the two states were a pale
+   pink box beside a white one, which is a distinction that dies on a projector
+   and dies again for anyone who cannot separate the two hues. Dashed means
+   open, solid means taken, and that survives being printed in grey. */
+.matrix-band .matrix-cell {
+  border-style: dashed;
+}
+
+.matrix-band .matrix-cell[data-filled='true'] {
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--color-accent) 42%, transparent);
+  background-color: color-mix(in oklab, var(--color-accent) 11%, var(--color-surface));
+}
+
+/* --------------------------------------------------------------------------
+   The day rail.
+
+   The three moments hang off one hairline that runs the width of the section:
+   a conference day, with three ticks on it. The tick is a child rather than a
+   thicker top border on each item, because a 2px border per column reads as
+   three separate cards and the point is that it is one day.
+   -------------------------------------------------------------------------- */
+
+.day-tick {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2.5rem;
+  height: 3px;
+  transform: translateY(-1.5px);
+  background-color: var(--accent-on-ground);
+}

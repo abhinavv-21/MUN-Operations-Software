@@ -1,6 +1,6 @@
 import { converter, formatHex, parse, type Oklch } from 'culori'
 import { contrastRatio, ensureContrast, TEXT_CONTRAST, UI_CONTRAST } from './contrast.ts'
-import { withPreset, type Theme } from './schema.ts'
+import { withPreset, type Theme, type ThemeInput } from './schema.ts'
 
 /**
  * Expands four seed colours into the full token set.
@@ -87,7 +87,7 @@ const FONT: Record<Theme['font'], { heading: string; body: string }> = {
   },
 }
 
-export function buildThemeVars(input: Theme): ThemeVars {
+export function buildThemeVars(input: ThemeInput): ThemeVars {
   const theme = withPreset(input)
 
   const primary = read(theme.seed.primary)
@@ -142,13 +142,35 @@ export function buildThemeVars(input: Theme): ThemeVars {
   })
 
   // ---- Accent -------------------------------------------------------------
-  // Held to text contrast on the light surface: `text-accent` is a real class
-  // in the ported components, not only a fill.
-  const accent = ensureContrast({ color: hex(primary), against: surface, ratio: TEXT_CONTRAST })
+  /*
+    Held to text contrast on **two** backgrounds, not one.
+
+    `text-accent` is a real class rather than only a fill, and it appears on the
+    surface *and* on `accent-wash` — the active sidebar item, the active tab, the
+    allocated cells of the matrix on the landing page. The wash is a tint of the
+    accent itself and sits a couple of points lighter than the surface, so a
+    guarantee against the surface did not carry: two of the six seeds the theme
+    suite tries reached only 4.30:1 there.
+
+    So the wash is derived first, from a provisional accent, and the accent is
+    then held against whichever of the two is the harder background. Only
+    darkening is ever needed, and darkening against the wash cannot hurt the
+    surface, which is lighter still.
+  */
+  const provisionalAccent = ensureContrast({
+    color: hex(primary),
+    against: surface,
+    ratio: TEXT_CONTRAST,
+  })
+  const accentWash = hex(wash(read(provisionalAccent)))
+  const accent = ensureContrast({
+    color: provisionalAccent,
+    against: accentWash,
+    ratio: TEXT_CONTRAST,
+  })
   const accentLch = read(accent)
   const accentHover = hex(shift(accentLch, -0.05))
   const accentPressed = hex(shift(accentLch, -0.1))
-  const accentWash = hex(wash(accentLch))
   // The reference needed this for exactly one reason: its magenta reaches only
   // 2.9:1 on the plum ground, so a lighter cut is required wherever the accent
   // has to carry meaning on dark.
@@ -316,6 +338,14 @@ export function contrastPairs(vars: ThemeVars) {
   add('ink-tertiary on surface', vars['ink-tertiary']!, vars.surface!, UI_CONTRAST)
   add('ink on canvas', vars.ink!, vars.canvas!, TEXT_CONTRAST)
   add('accent on surface', vars.accent!, vars.surface!, TEXT_CONTRAST)
+  /*
+    `bg-accent-wash text-accent` is real, load-bearing code — the active item in
+    the sidebar, the active tab lozenge, the matrix's allocated cells — and it
+    was the one pair nothing checked. `accent` is only guaranteed against
+    `surface`, and the wash is a couple of points lighter than that, so the
+    guarantee did not carry across.
+  */
+  add('accent on accent-wash', vars.accent!, vars['accent-wash']!, TEXT_CONTRAST)
   add('accent-bright on surface-inverted', vars['accent-bright']!, vars['surface-inverted']!, TEXT_CONTRAST)
   add('ink-inverted on surface-inverted', vars['ink-inverted']!, vars['surface-inverted']!, TEXT_CONTRAST)
   add('edge-strong on surface', vars['edge-strong']!, vars.surface!, UI_CONTRAST)

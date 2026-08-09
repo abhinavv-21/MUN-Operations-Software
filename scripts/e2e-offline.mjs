@@ -558,7 +558,9 @@ async function main() {
       'the row to show the mark as queued',
     )
 
-    const attendanceRowsWhileOffline = Number(sql(`SELECT count(*) FROM "AttendanceRecord"`))
+    const attendanceRowsWhileOffline = Number(
+      sql(`SELECT count(*) FROM "AttendanceRecord" WHERE "conferenceId" = ${quote(fixture.conferenceId)}`),
+    )
     check(
       attendanceRowsWhileOffline === 0,
       'nothing reached the database, because there is no network',
@@ -579,7 +581,9 @@ async function main() {
       'the acknowledgement that it was saved on the device',
     )
 
-    const logisticsRowsWhileOffline = Number(sql(`SELECT count(*) FROM "LogisticsRequest"`))
+    const logisticsRowsWhileOffline = Number(
+      sql(`SELECT count(*) FROM "LogisticsRequest" WHERE "conferenceId" = ${quote(fixture.conferenceId)}`),
+    )
     check(
       logisticsRowsWhileOffline === 0,
       'nothing reached the database, because there is no network',
@@ -636,7 +640,47 @@ async function main() {
     )
     check(delegateName === 'Dara Okafor', 'and nothing was written for it', delegateName)
 
-    step('Criterion 3 — the queue survives a reload while still offline')
+    /* ---------------------------------------------------------------- */
+
+    step('Criterion 3 — the queue survives a long outage, not just a brief one')
+    /*
+      The case the original version of this script missed, and it cost a
+      data-loss bug that shipped.
+
+      Being offline was tested for a few seconds. `MAX_ATTEMPTS` was 8, the flush
+      poll runs every fifteen seconds and makes one attempt on the head of the
+      queue, and a code-0 outcome counted against that budget — so at a hundred
+      and five seconds the queue deleted everything in it. Two minutes in a
+      basement committee room, which is the scenario on the landing page.
+
+      Duration was the variable, and it was never varied. This waits past four
+      poll cycles and then checks the writes are still there.
+    */
+    const OUTAGE_MS = 70_000
+    note(`staying offline for ${OUTAGE_MS / 1000}s — past several flush attempts`)
+
+    const startedOutage = Date.now()
+    let attemptsSeen = 0
+    while (Date.now() - startedOutage < OUTAGE_MS) {
+      await sleep(10_000)
+      const still = await queueKinds(register)
+      attemptsSeen += 1
+      if (still.length !== 2) {
+        break
+      }
+    }
+
+    const survivedOutage = await queueKinds(register)
+    check(
+      survivedOutage.length === 2,
+      `both writes survived ${Math.round((Date.now() - startedOutage) / 1000)}s offline across ` +
+        `${attemptsSeen} checks — a write that got no answer is never discarded`,
+      JSON.stringify(survivedOutage),
+    )
+
+    /* ---------------------------------------------------------------- */
+
+    step('Criterion 4 — the queue survives a reload while still offline')
     await register.reload()
     // The reload lands on the offline page, which is the service worker doing
     // its one job. IndexedDB belongs to the origin, so the queue is untouched.
@@ -657,22 +701,29 @@ async function main() {
     }
 
     // The queue flushes on the `online` event. Give it the round trips.
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const attendance = Number(sql(`SELECT count(*) FROM "AttendanceRecord"`))
-      const logistics = Number(sql(`SELECT count(*) FROM "LogisticsRequest"`))
+    // The poll backs off to fifteen seconds, so a reconnect can take that long
+    // to be noticed even though the `online` event fires immediately.
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const attendance = Number(
+        sql(`SELECT count(*) FROM "AttendanceRecord" WHERE "conferenceId" = ${quote(fixture.conferenceId)}`),
+      )
+      const logistics = Number(
+        sql(`SELECT count(*) FROM "LogisticsRequest" WHERE "conferenceId" = ${quote(fixture.conferenceId)}`),
+      )
       if (attendance >= 1 && logistics >= 1) break
       await sleep(500)
     }
 
     const landed = sql(`
-      SELECT (SELECT count(*) FROM "AttendanceRecord") || '/' ||
-             (SELECT count(*) FROM "LogisticsRequest")
+      SELECT (SELECT count(*) FROM "AttendanceRecord" WHERE "conferenceId" = ${quote(fixture.conferenceId)}) || '/' ||
+             (SELECT count(*) FROM "LogisticsRequest" WHERE "conferenceId" = ${quote(fixture.conferenceId)})
     `)
     check(landed === '1/1', `both writes landed in Postgres (attendance/logistics = ${landed})`)
 
     const attendanceRow = sql(`
       SELECT d."fullName" || ' · ' || a.status || ' · ' || a.day
       FROM "AttendanceRecord" a JOIN "Delegate" d ON d.id = a."delegateId"
+      WHERE a."conferenceId" = ${quote(fixture.conferenceId)}
     `)
     check(
       attendanceRow.includes('Dara Okafor') && attendanceRow.includes('PRESENT'),
@@ -682,7 +733,7 @@ async function main() {
     const logisticsRow = sql(`
       SELECT title || ' · ' || status || ' · ' ||
              CASE WHEN "clientRequestId" IS NULL THEN 'no token' ELSE 'idempotency token present' END
-      FROM "LogisticsRequest"
+      FROM "LogisticsRequest" WHERE "conferenceId" = ${quote(fixture.conferenceId)}
     `)
     check(
       logisticsRow.includes('Projector in UNSC') && logisticsRow.includes('token present'),
@@ -694,7 +745,8 @@ async function main() {
 
     const auditActions = sql(`
       SELECT string_agg(DISTINCT action, ', ' ORDER BY action) FROM "AuditLog"
-      WHERE action IN ('attendance.checkin', 'logistics.create')
+      WHERE "conferenceId" = ${quote(fixture.conferenceId)}
+        AND action IN ('attendance.checkin', 'logistics.create')
     `)
     check(
       auditActions === 'attendance.checkin, logistics.create',

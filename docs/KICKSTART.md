@@ -4,7 +4,7 @@ Paste everything below the line into a fresh session, from the repository root.
 
 ---
 
-You are continuing work on **MUN Operations Software**, a multi-tenant SaaS that runs the operations
+You are continuing work on **Bloc**, a multi-tenant SaaS that runs the operations
 of a Model UN conference. Anyone signs up and gets an **organisation**; an organisation runs one or
 more **conferences**. The organisation is the billing and membership boundary; **the conference is
 the data boundary**.
