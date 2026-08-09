@@ -126,3 +126,15 @@ export function requireOrg(ctx: Ctx): ResolvedMembership {
   if (!ctx.membership) throw ApiError.notFound('Not found')
   return ctx.membership
 }
+
+/**
+ * Narrows `ctx.conferenceId` for services that operate inside one.
+ *
+ * 404 rather than 400: reaching here without a conference means the route did
+ * not declare `conferenceParam`, and the caller learns nothing useful from
+ * being told which of the two it was.
+ */
+export function requireConference(ctx: Ctx): string {
+  if (!ctx.conferenceId) throw ApiError.notFound('Not found')
+  return ctx.conferenceId
+}

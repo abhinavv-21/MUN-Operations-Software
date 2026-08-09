@@ -108,9 +108,28 @@ export async function resolveConferenceRole(
   membership: ResolvedMembership,
   conferenceId: string,
 ): Promise<ConferenceRoleName | null> {
-  if (isOrgAdmin(membership.orgRole)) return 'ADMIN'
-
   const db = scope({ organizationId: membership.organizationId })
+
+  /*
+    The conference must belong to this organisation, and that is checked before
+    anything else — including the org-admin shortcut.
+
+    Without this, an owner of organisation A who pasted organisation B's
+    conference id into the URL was handed ADMIN on it. The scoped client would
+    then filter operational rows by that conferenceId and return them, because
+    conferenceId is the only filter those tables carry. An admin of any
+    organisation could read any other organisation's committees, delegates and
+    allocations by guessing one id.
+
+    Scoped by organisation, so a conference in another one is simply not found.
+  */
+  const conference = await db.conference.findFirst({
+    where: { id: conferenceId },
+    select: { id: true },
+  })
+  if (!conference) return null
+
+  if (isOrgAdmin(membership.orgRole)) return 'ADMIN'
 
   // ConferenceRole is conference-scoped but readable across an organisation,
   // which is what makes this one query instead of one per conference.

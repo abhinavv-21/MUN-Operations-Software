@@ -15,7 +15,7 @@
  * A read on one of these without a conference in scope throws rather than
  * returning every tenant's rows.
  */
-export const TENANT_MODELS = ['Committee', 'ConferenceRole'] as const
+export const TENANT_MODELS = ['Committee', 'CommitteeCountry', 'ConferenceRole'] as const
 
 /**
  * Conference-scoped models that may also be *read* with only an organisation in

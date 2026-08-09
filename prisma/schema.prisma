@@ -172,14 +172,28 @@ model Conference {
   name    String
   edition String?
 
-  status ConferenceStatus @default(DRAFT)
-  theme  Json?
+  /// When it runs. Null until the organiser has decided.
+  startsOn DateTime?
+  endsOn   DateTime?
+  venue    String?
+
+  /// Stored in the currency's minor unit — paise, cents — because a delegate
+  /// fee of 1500.10 in a float is a fee that eventually prints as 1500.09.
+  feeMinorUnits Int?
+  feeCurrency   String? @db.VarChar(3)
+
+  registrationDeadline DateTime?
+
+  status  ConferenceStatus @default(DRAFT)
+  theme   Json?
+  logoUrl String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   committees   Committee[]
+  countries    CommitteeCountry[]
   roles        ConferenceRole[]
   auditLogs    AuditLog[]
 
@@ -277,9 +291,39 @@ model Committee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  conference Conference         @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  countries  CommitteeCountry[]
 
+  /// Scoped by conference, not global. A society running MUN X and MUN XI must
+  /// be able to have a UNSC in both — the reference product's global uniqueness
+  /// is a bug the moment there is more than one conference.
   @@unique([conferenceId, code])
   @@unique([conferenceId, name])
   @@index([conferenceId])
+}
+
+/// One country available in one committee: the country matrix.
+///
+/// Zero rows for a committee means that committee is unconstrained and accepts
+/// free-text countries. That is what lets one committee's matrix be imported
+/// without freezing the other five, and it is enforced in the allocation
+/// service rather than hidden in the UI.
+model CommitteeCountry {
+  id           String @id @default(uuid(7))
+  conferenceId String
+  committeeId  String
+
+  country String
+
+  /// How many delegates this seat holds. Double-delegation is two.
+  seats Int @default(1)
+
+  createdAt DateTime @default(now())
+
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  committee  Committee  @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+
+  @@unique([conferenceId, committeeId, country])
+  @@index([conferenceId])
+  @@index([committeeId])
 }

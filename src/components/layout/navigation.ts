@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { LayoutDashboard, Users } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, Users } from 'lucide-react'
 
 /**
  * Navigation as data, in one file.
@@ -13,10 +13,10 @@ import { LayoutDashboard, Users } from 'lucide-react'
  * in the shell an error. Inference keeps `/app/${string}/members` intact all
  * the way to the `Link`.
  *
- * Only routes that exist appear here, which is how Conferences and Settings
- * came back out: they arrive in Stage 4 and Stage 8, and until then a nav item
- * pointing at them is a link to a 404. Typed routes make that a compile error
- * rather than something a person has to notice.
+ * Only routes that exist appear here. Typed routes make a link to a page that
+ * has not been built a compile error rather than something a person has to
+ * notice — which is how Conferences and Settings came out in Stage 3, and how
+ * Conferences came back in now that it exists. Settings arrives in Stage 8.
  */
 export const ORG_NAV = [
   {
@@ -24,6 +24,13 @@ export const ORG_NAV = [
     label: 'Overview',
     icon: LayoutDashboard as LucideIcon,
     href: (orgSlug: string) => `/app/${orgSlug}` as const,
+    requiresMemberManager: false,
+  },
+  {
+    key: 'conferences',
+    label: 'Conferences',
+    icon: CalendarDays as LucideIcon,
+    href: (orgSlug: string) => `/app/${orgSlug}/conferences` as const,
     requiresMemberManager: false,
   },
   {

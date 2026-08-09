@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { ThemeStyle } from '@/components/ThemeStyle.tsx'
+import { Providers } from './providers.tsx'
 import { fontVariables } from '@/lib/fonts.ts'
 import { PRODUCT_DESCRIPTION, PRODUCT_NAME } from '@/lib/product.ts'
 import { defaultThemeCss } from '@/server/services/theme.ts'
@@ -24,7 +25,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             later in the document, which wins on source order. */}
         <ThemeStyle css={defaultThemeCss()} />
       </head>
-      <body className="ground-app min-h-dvh">{children}</body>
+      <body className="ground-app min-h-dvh">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   )
 }
