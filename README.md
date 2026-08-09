@@ -93,6 +93,10 @@ RLS is deliberately *not* the tenancy mechanism. Under a transaction-mode pooler
 
 **Prisma 7** removed `url` from the datasource block and no longer exposes `Prisma.dmmf` at runtime. Connection URLs are in `prisma.config.ts`; the runtime client is handed a `pg` driver adapter, which also means no Rust query engine binary in the serverless bundle. The coverage test reads `Prisma.ModelName` instead of DMMF — public, generated and typed, which DMMF never was.
 
+**Tailwind 4, decided before Stage 3 installs it.** Tailwind 4 is CSS-first: there is no `tailwind.config.ts`, colours are declared in an `@theme` block, and the opacity modifier compiles to `color-mix()` rather than `<alpha-value>`. So the channel-triplet trick — `--rgb-primary: 180 24 132`, consumed as `rgb(var(--rgb-primary) / 0.42)` — is no longer needed to keep translucency from shifting hue, and the token layer gets smaller rather than larger.
+
+What does not change is the part that matters: the **token names are the migration contract**. `bg-accent`, `text-ink-secondary`, `border-edge` and the rest keep their exact names, so the reference product's thirteen feature folders still port with zero colour edits. The ground classes in `tokens.css` are plain CSS and carry over as they are. Only the config layer is rewritten, and it was going to be rewritten anyway.
+
 **npm's `allowScripts` gate.** The approvals are committed in `package.json` with pinned versions. Without them a clean install — which is what CI and Vercel do every time — produces a tree that cannot generate a Prisma client. Bumping Prisma re-blocks the scripts until the approval is renewed.
 
 ## Commit style
