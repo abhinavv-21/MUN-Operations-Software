@@ -70,10 +70,11 @@ const eslintConfig = defineConfig([
       'src/server/db.ts',
       'src/server/ctx.ts',
       // The complete list of reads that discover a scope rather than operating
-      // inside one. Three functions, each filtered by a caller-supplied key.
+      // inside one. All but `emailHasAccount` are filtered by a caller-supplied
+      // key; that one is an enumeration oracle by design and is rate limited at
+      // its route. See docs/03-ARCHITECTURE.md.
       'src/server/scope-resolution.ts',
       'src/app/api/health/route.ts',
-      'prisma/seed.ts',
       'tests/**/*.ts',
     ],
     rules: {
