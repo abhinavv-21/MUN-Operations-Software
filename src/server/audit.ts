@@ -31,6 +31,7 @@ const REDACTED_KEYS = new Set([
   'apiKey',
   'keysAuth',
   'keysP256',
+  'appsScript',
 ])
 
 const REDACTED = '[redacted]'
