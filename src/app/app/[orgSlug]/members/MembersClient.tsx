@@ -2,6 +2,14 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { Copy, UserPlus } from 'lucide-react'
+import { Badge, InvitationBadge, RoleBadge } from '@/components/ui/Badge.tsx'
+import { Button } from '@/components/ui/Button.tsx'
+import { Card, CardHeader } from '@/components/ui/Card.tsx'
+import { DataTable, type Column } from '@/components/ui/DataTable.tsx'
+import { Field, Input, Select } from '@/components/ui/Field.tsx'
+import { Modal } from '@/components/ui/Modal.tsx'
+import { ErrorState } from '@/components/ui/States.tsx'
 
 interface Member {
   userId: string
@@ -56,18 +64,17 @@ export function MembersClient({
   orgSlug,
   currentUserId,
   currentUserRole,
-  initialMembers,
-  initialInvitations,
+  members,
+  invitations,
 }: {
   orgSlug: string
   currentUserId: string
   currentUserRole: string
-  initialMembers: Member[]
-  initialInvitations: Invitation[]
+  members: Member[]
+  invitations: Invitation[]
 }) {
   const router = useRouter()
-  const [members] = useState(initialMembers)
-  const [invitations] = useState(initialInvitations)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const [email, setEmail] = useState('')
   const [orgRole, setOrgRole] = useState('MEMBER')
   const [issuedLink, setIssuedLink] = useState<string | null>(null)
@@ -75,12 +82,12 @@ export function MembersClient({
   const [busy, setBusy] = useState(false)
 
   const ownerCount = members.filter((member) => member.role === 'OWNER').length
+  const pending = invitations.filter((invitation) => !invitation.acceptedAt)
 
   async function invite(event: React.FormEvent) {
     event.preventDefault()
     setBusy(true)
     setError(null)
-    setIssuedLink(null)
 
     const result = await call(`/api/orgs/${orgSlug}/invitations`, {
       method: 'POST',
@@ -90,9 +97,8 @@ export function MembersClient({
 
     if (!result.ok) return setError(result.message)
 
-    // Shown once, because nothing stored can produce it again. v1 sends no
-    // email of its own — the organiser forwards this with the mail client they
-    // already use.
+    // Shown once, because nothing stored can reproduce it. v1 sends no email of
+    // its own — the organiser forwards this with the mail client they have.
     setIssuedLink(`${window.location.origin}/invite?token=${result.body.token}`)
     setEmail('')
     router.refresh()
@@ -115,115 +121,194 @@ export function MembersClient({
     router.refresh()
   }
 
+  const columns: Column<Member>[] = [
+    {
+      key: 'person',
+      header: 'Person',
+      render: (member) => (
+        <div className="min-w-0">
+          <p className="truncate text-body text-ink">{member.fullName ?? member.email}</p>
+          <p className="truncate text-body-sm text-ink-secondary">{member.email}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Role',
+      render: (member) => {
+        const isLastOwner = member.role === 'OWNER' && ownerCount === 1
+        if (isLastOwner || currentUserRole === 'MEMBER') {
+          return (
+            <div className="flex flex-col gap-1">
+              <RoleBadge role={member.role} />
+              {isLastOwner ? (
+                <span className="text-body-sm text-ink-tertiary">The only owner</span>
+              ) : null}
+            </div>
+          )
+        }
+        return (
+          <Select
+            aria-label={`Role for ${member.email}`}
+            value={member.role}
+            onChange={(event) => changeRole(member.userId, event.target.value)}
+            className="max-w-40"
+          >
+            <option value="OWNER" disabled={currentUserRole !== 'OWNER'}>
+              Owner
+            </option>
+            <option value="ADMIN">Admin</option>
+            <option value="MEMBER">Member</option>
+          </Select>
+        )
+      },
+    },
+    {
+      key: 'manage',
+      header: 'Manages members',
+      secondary: true,
+      render: (member) =>
+        member.canManageMembers || member.role === 'OWNER' ? (
+          <Badge tone="info">Yes</Badge>
+        ) : (
+          <span className="text-ink-tertiary">No</span>
+        ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (member) => {
+        const isLastOwner = member.role === 'OWNER' && ownerCount === 1
+        // Omitted rather than disabled where it cannot apply at all.
+        if (isLastOwner || member.userId === currentUserId) return null
+        return (
+          <Button variant="ghost" size="sm" onClick={() => remove(member.userId)}>
+            Remove
+          </Button>
+        )
+      },
+    },
+  ]
+
   return (
-    <div className="stack">
-      {error ? (
-        <p role="alert" className="error">
-          {error}
-        </p>
+    <div className="flex flex-col gap-6">
+      {error ? <ErrorState message={error} /> : null}
+
+      <Card className="p-0 md:p-0">
+        <div className="p-5 pb-0 md:p-6 md:pb-0">
+          <CardHeader
+            title="People"
+            description="Owners and admins can reach every conference. Members reach only what they are granted."
+            actions={
+              <Button onClick={() => setInviteOpen(true)}>
+                <UserPlus size={16} aria-hidden />
+                Invite
+              </Button>
+            }
+          />
+        </div>
+        <DataTable
+          caption="Members of this organisation"
+          columns={columns}
+          rows={members}
+          rowKey={(member) => member.userId}
+          className="rounded-none border-0 border-t border-edge"
+        />
+      </Card>
+
+      {pending.length > 0 ? (
+        <Card>
+          <CardHeader title="Pending invitations" />
+          <ul className="divide-y divide-edge">
+            {pending.map((invitation) => (
+              <li key={invitation.id} className="flex flex-wrap items-center gap-3 py-3">
+                <span className="min-w-0 flex-1 truncate text-body text-ink">
+                  {invitation.email}
+                </span>
+                <RoleBadge role={invitation.orgRole} />
+                <InvitationBadge accepted={false} />
+                <span className="text-body-sm text-ink-secondary">
+                  expires {new Date(invitation.expiresAt).toLocaleDateString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
       ) : null}
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Person</th>
-            <th>Role</th>
-            <th>Manage members</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((member) => {
-            const isLastOwner = member.role === 'OWNER' && ownerCount === 1
-            return (
-              <tr key={member.userId}>
-                <td>
-                  {member.fullName ?? member.email}
-                  <br />
-                  <span className="muted">{member.email}</span>
-                </td>
-                <td>
-                  <select
-                    value={member.role}
-                    disabled={isLastOwner || currentUserRole === 'MEMBER'}
-                    onChange={(event) => changeRole(member.userId, event.target.value)}
-                  >
-                    <option value="OWNER" disabled={currentUserRole !== 'OWNER'}>
-                      Owner
-                    </option>
-                    <option value="ADMIN">Admin</option>
-                    <option value="MEMBER">Member</option>
-                  </select>
-                  {/* Disabled here as a courtesy. The server refuses it either
-                      way, which is the check that counts. */}
-                  {isLastOwner ? <p className="muted">The only owner</p> : null}
-                </td>
-                <td>{member.canManageMembers ? 'Yes' : 'No'}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="button subtle"
-                    disabled={isLastOwner || member.userId === currentUserId}
-                    onClick={() => remove(member.userId)}
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+      <Modal
+        open={inviteOpen}
+        onOpenChange={(open) => {
+          setInviteOpen(open)
+          if (!open) setIssuedLink(null)
+        }}
+        title="Invite someone"
+        description="They will join this organisation when they open the link."
+        holdsInput
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setInviteOpen(false)}>
+              Close
+            </Button>
+            <Button type="submit" form="invite-form" loading={busy} disabled={email.length === 0}>
+              Create link
+            </Button>
+          </>
+        }
+      >
+        <form id="invite-form" onSubmit={invite} className="flex flex-col gap-4">
+          <Field label="Email address" required>
+            {({ id, describedBy, invalid }) => (
+              <Input
+                id={id}
+                type="email"
+                required
+                value={email}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="them@school.edu"
+              />
+            )}
+          </Field>
 
-      <section className="panel">
-        <h2>Invite someone</h2>
-        <form onSubmit={invite} className="stack">
-          <label htmlFor="invite-email">Email address</label>
-          <input
-            id="invite-email"
-            type="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="them@school.edu"
-          />
-          <label htmlFor="invite-role">Role</label>
-          <select
-            id="invite-role"
-            value={orgRole}
-            onChange={(event) => setOrgRole(event.target.value)}
+          <Field
+            label="Role"
+            hint="Members see only the conferences you grant them. Admins see all of them."
           >
-            <option value="MEMBER">Member — access only to conferences you grant</option>
-            <option value="ADMIN">Admin — full access to every conference</option>
-          </select>
-          <button type="submit" disabled={busy || email.length === 0} className="button">
-            {busy ? 'Creating…' : 'Create invitation link'}
-          </button>
+            {({ id, describedBy }) => (
+              <Select
+                id={id}
+                aria-describedby={describedBy}
+                value={orgRole}
+                onChange={(event) => setOrgRole(event.target.value)}
+              >
+                <option value="MEMBER">Member</option>
+                <option value="ADMIN">Admin</option>
+              </Select>
+            )}
+          </Field>
         </form>
 
         {issuedLink ? (
-          <div role="status" className="stack">
-            <p>Send them this link. It is shown once and works for 14 days.</p>
-            <input readOnly value={issuedLink} onFocus={(event) => event.target.select()} />
+          <div role="status" className="mt-4 rounded-card border border-edge bg-accent-wash p-4">
+            <p className="text-body-sm text-ink">
+              Send them this link. It is shown once and works for 14 days.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <Input readOnly value={issuedLink} onFocus={(event) => event.target.select()} />
+              <Button
+                variant="secondary"
+                size="icon"
+                aria-label="Copy invitation link"
+                onClick={() => navigator.clipboard?.writeText(issuedLink)}
+              >
+                <Copy size={16} aria-hidden />
+              </Button>
+            </div>
           </div>
         ) : null}
-      </section>
-
-      {invitations.length > 0 ? (
-        <section className="panel">
-          <h2>Pending invitations</h2>
-          <ul>
-            {invitations
-              .filter((invitation) => !invitation.acceptedAt)
-              .map((invitation) => (
-                <li key={invitation.id}>
-                  {invitation.email} · {invitation.orgRole.toLowerCase()} · expires{' '}
-                  {new Date(invitation.expiresAt).toLocaleDateString()}
-                </li>
-              ))}
-          </ul>
-        </section>
-      ) : null}
+      </Modal>
     </div>
   )
 }

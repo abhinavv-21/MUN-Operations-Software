@@ -1,0 +1,341 @@
+/* ==========================================================================
+   tokens.css — the single source of truth for colour, type, space and motion.
+   No hex value is permitted anywhere else in the codebase, and CI checks.
+
+   HOW THIS DIFFERS FROM THE REFERENCE PRODUCT
+
+   The reference bakes literal hex into tailwind.config.ts, so a runtime theme
+   swap is impossible without a rebuild. Here every colour resolves to a `--t-*`
+   custom property that arrives from the database, rendered into the first byte
+   by the layout. Editing a row changes the product; nothing is recompiled.
+
+   The token *names* are unchanged, and that is deliberate: `bg-accent`,
+   `text-ink-secondary`, `border-edge-strong` and the rest are exactly what the
+   reference's thirteen feature folders already use, so those screens port with
+   no colour edits at all. The names are the migration contract.
+
+   NO CHANNEL TRIPLETS
+
+   The reference publishes `--rgb-primary: 180 24 132` so translucency can be
+   written as `rgb(var(--rgb-primary) / 0.42)` without introducing a new hue.
+   Tailwind 4 compiles the opacity modifier to `color-mix(in oklab, …)`, which
+   solves the same problem natively, so the triplets are dropped rather than
+   ported. One fewer parallel set of values to keep in agreement.
+
+   THE CONTRAST CONTRACT IS NOT IN THIS FILE
+
+   The reference keeps it as a hand-maintained table of eleven measured pairs
+   in a comment. Its own decision record says that is the one thing to do
+   differently, because the moment an organiser picks their own navy every
+   number in it is a guess. It lives in src/lib/theme/contrast.ts as a function,
+   with tests over six seeds including a deliberately awful pale yellow.
+   ========================================================================== */
+
+@theme {
+  /* ---- Colour ---------------------------------------------------------
+     Every one of these is a pointer. The values are derived by
+     buildThemeVars() and injected per-organisation as `--t-*`. */
+  --color-canvas: var(--t-canvas);
+  --color-surface: var(--t-surface);
+  --color-surface-sunken: var(--t-surface-sunken);
+  --color-surface-inverted: var(--t-surface-inverted);
+
+  --color-ink: var(--t-ink);
+  --color-ink-secondary: var(--t-ink-secondary);
+  --color-ink-tertiary: var(--t-ink-tertiary);
+  --color-ink-inverted: var(--t-ink-inverted);
+
+  --color-accent: var(--t-accent);
+  --color-accent-hover: var(--t-accent-hover);
+  --color-accent-pressed: var(--t-accent-pressed);
+  --color-accent-wash: var(--t-accent-wash);
+  /* A lighter cut for the inverted surface, where the base accent cannot
+     reach 4.5:1. */
+  --color-accent-bright: var(--t-accent-bright);
+
+  --color-success: var(--t-success);
+  --color-success-wash: var(--t-success-wash);
+  --color-warning: var(--t-warning);
+  --color-warning-wash: var(--t-warning-wash);
+  --color-danger: var(--t-danger);
+  --color-danger-wash: var(--t-danger-wash);
+  --color-info: var(--t-info);
+  --color-info-wash: var(--t-info-wash);
+
+  --color-edge: var(--t-edge);
+  --color-edge-strong: var(--t-edge-strong);
+  --color-focus: var(--t-focus);
+
+  /* The seven locals a ground class republishes. Sections read these and
+     never a literal, which is what makes a ground flip incapable of
+     stranding text at 1.02:1. */
+  --color-ground: var(--ground);
+  --color-on-ground: var(--on-ground);
+  --color-on-ground-muted: var(--on-ground-muted);
+  --color-hairline: var(--hairline);
+  --color-focus-ring: var(--focus-ring);
+  --color-accent-on-ground: var(--accent-on-ground);
+  --color-border-interactive: var(--border-interactive);
+
+  /* ---- Type ------------------------------------------------------------ */
+  --font-heading: var(--t-font-heading);
+  --font-sans: var(--t-font-body);
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --text-display: 40px;
+  --text-display--line-height: 1.1;
+  --text-display--font-weight: 700;
+  --text-display--letter-spacing: -0.02em;
+
+  --text-h1: 28px;
+  --text-h1--line-height: 1.2;
+  --text-h1--font-weight: 700;
+  --text-h1--letter-spacing: -0.02em;
+
+  --text-h2: 20px;
+  --text-h2--line-height: 1.25;
+  --text-h2--font-weight: 600;
+  --text-h2--letter-spacing: -0.02em;
+
+  --text-h3: 16px;
+  --text-h3--line-height: 1.35;
+  --text-h3--font-weight: 600;
+
+  --text-body: 15px;
+  --text-body--line-height: 1.55;
+
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 1.5;
+
+  --text-label: 11px;
+  --text-label--line-height: 1.4;
+  --text-label--font-weight: 600;
+  --text-label--letter-spacing: 0.06em;
+
+  --text-data: 13px;
+  --text-data--line-height: 1.5;
+
+  /* ---- Space (4px base) ------------------------------------------------ */
+  --spacing-row: 52px;
+  --spacing-row-mobile: 56px;
+  --spacing-tap: 48px;
+  --spacing-rail: 64px;
+  --spacing-sidebar: 240px;
+  --spacing-tabbar: 56px;
+
+  --container-prose: 68ch;
+  --container-app: 1440px;
+
+  --breakpoint-xs: 390px;
+
+  /* ---- Shape ----------------------------------------------------------- */
+  --radius-control: var(--t-radius-control);
+  --radius-card: var(--t-radius-card);
+  --radius-pill: 999px;
+
+  /* ---- Depth ----------------------------------------------------------- */
+  --shadow-raised: 0 1px 2px color-mix(in oklab, var(--t-ink) 8%, transparent);
+  --shadow-overlay: 0 12px 32px color-mix(in oklab, var(--t-ink) 18%, transparent);
+
+  /* ---- Motion ---------------------------------------------------------- */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-slide-up: slide-up 180ms cubic-bezier(0.2, 0, 0, 1);
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      transform: translateY(8px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+}
+
+/* Named durations. Tailwind 4 has no `--duration-*` namespace, and the ported
+   components use `duration-micro` / `duration-standard` / `duration-overlay`
+   by name, so they are declared as utilities rather than renamed. */
+@utility duration-micro {
+  transition-duration: 120ms;
+}
+@utility duration-standard {
+  transition-duration: 180ms;
+}
+@utility duration-overlay {
+  transition-duration: 240ms;
+}
+
+/* ==========================================================================
+   Grounds
+
+   Each republishes the same seven locals. A section reads `--on-ground`,
+   never `--color-ink`, so placing it on a dark ground cannot leave the text
+   invisible. Every value here was walked through the contrast contract before
+   it was published — see src/lib/theme/build.ts.
+   ========================================================================== */
+
+.ground-app {
+  --ground: var(--t-ground-app);
+  --on-ground: var(--t-on-app);
+  --on-ground-muted: var(--t-on-app-muted);
+  --hairline: var(--t-hairline-app);
+  --focus-ring: var(--t-focus-app);
+  --accent-on-ground: var(--t-accent-on-app);
+  --border-interactive: var(--t-border-app);
+  background-color: var(--ground);
+  color: var(--on-ground);
+}
+
+.ground-paper {
+  --ground: var(--t-ground-paper);
+  --on-ground: var(--t-on-paper);
+  --on-ground-muted: var(--t-on-paper-muted);
+  --hairline: var(--t-hairline-paper);
+  --focus-ring: var(--t-focus-paper);
+  --accent-on-ground: var(--t-accent-on-paper);
+  --border-interactive: var(--t-border-paper);
+  background-color: var(--ground);
+  color: var(--on-ground);
+}
+
+.ground-ink {
+  --ground: var(--t-ground-ink);
+  --on-ground: var(--t-on-ink);
+  --on-ground-muted: var(--t-on-ink-muted);
+  --hairline: var(--t-hairline-ink);
+  --focus-ring: var(--t-focus-ink);
+  --accent-on-ground: var(--t-accent-on-ink);
+  --border-interactive: var(--t-border-ink);
+  background-color: var(--ground);
+  color: var(--on-ground);
+}
+
+.ground-blush {
+  --ground: var(--t-ground-blush);
+  --on-ground: var(--t-on-blush);
+  --on-ground-muted: var(--t-on-blush-muted);
+  --hairline: var(--t-hairline-blush);
+  --focus-ring: var(--t-focus-blush);
+  --accent-on-ground: var(--t-accent-on-blush);
+  --border-interactive: var(--t-border-blush);
+  background-color: var(--ground);
+  color: var(--on-ground);
+}
+
+/* The one saturated ground, used once, at a conversion point. On this ground
+   the accent *is* the background, so `--accent-on-ground` resolves to the
+   readable text colour instead. */
+.ground-brand {
+  --ground: var(--t-ground-brand);
+  --on-ground: var(--t-on-brand);
+  --on-ground-muted: var(--t-on-brand-muted);
+  --hairline: var(--t-hairline-brand);
+  --focus-ring: var(--t-focus-brand);
+  --accent-on-ground: var(--t-accent-on-brand);
+  --border-interactive: var(--t-border-brand);
+  background-color: var(--ground);
+  color: var(--on-ground);
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    /* Zero horizontal scrolling on body at any width from 390px. Tables scroll
+       inside their own container instead. */
+    overflow-x: hidden;
+    min-width: 320px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+  }
+
+  /* Visible focus everywhere, in the deliberately non-brand focus colour so it
+     is never mistaken for a hover state. */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring, var(--color-focus));
+    outline-offset: 2px;
+  }
+
+  ::placeholder {
+    color: var(--color-ink-tertiary);
+  }
+}
+
+/* ==========================================================================
+   Components
+   ========================================================================== */
+
+@layer components {
+  /* The rule under a page title: the app's one signature mark, and how you
+     know which page you are on. It takes the organiser's accent, so it is the
+     most visible single place the theme shows up. */
+  .page-rule {
+    display: block;
+    height: 3px;
+    width: 3rem;
+    border-radius: var(--radius-pill);
+    background-color: var(--color-accent);
+  }
+
+  .skeleton {
+    border-radius: var(--radius-control);
+    background-image: linear-gradient(
+      90deg,
+      var(--color-surface-sunken) 0%,
+      var(--color-edge) 50%,
+      var(--color-surface-sunken) 100%
+    );
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /* Horizontal scroll is permitted inside a table container, never on body. */
+  .table-scroll {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

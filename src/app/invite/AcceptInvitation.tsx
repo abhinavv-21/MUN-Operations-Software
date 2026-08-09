@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { Button } from '@/components/ui/Button.tsx'
 
 export function AcceptInvitation({ token }: { token: string }) {
   const router = useRouter()
@@ -30,12 +31,12 @@ export function AcceptInvitation({ token }: { token: string }) {
   }
 
   return (
-    <div className="stack">
-      <button type="button" onClick={accept} disabled={busy} className="button">
-        {busy ? 'Joining…' : 'Accept invitation'}
-      </button>
+    <div className="mt-6 flex flex-col gap-3">
+      <Button onClick={accept} loading={busy}>
+        Accept invitation
+      </Button>
       {error ? (
-        <p role="alert" className="error">
+        <p role="alert" className="text-body-sm text-danger">
           {error}
         </p>
       ) : null}

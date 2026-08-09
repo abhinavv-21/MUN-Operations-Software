@@ -1,5 +1,11 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Building2, LogOut } from 'lucide-react'
+import { RoleBadge } from '@/components/ui/Badge.tsx'
+import { Button } from '@/components/ui/Button.tsx'
+import { Card, CardHeader } from '@/components/ui/Card.tsx'
+import { PageHeader } from '@/components/ui/PageHeader.tsx'
+import { EmptyState } from '@/components/ui/States.tsx'
 import { pageCtx } from '@/server/page-ctx.ts'
 import { listMyOrganizations } from '@/server/services/organizations.ts'
 import { CreateOrganizationForm } from './CreateOrganizationForm.tsx'
@@ -13,39 +19,56 @@ export default async function AppHomePage() {
   const organizations = await listMyOrganizations(ctx)
 
   return (
-    <main className="page">
-      <header className="page-header">
-        <h1>Your organisations</h1>
-        <form action="/auth/sign-out" method="post">
-          <button type="submit" className="button subtle">
-            Sign out
-          </button>
-        </form>
-      </header>
+    <main className="ground-app min-h-dvh px-4 py-8 md:px-8">
+      <div className="mx-auto w-full max-w-app">
+        <PageHeader
+          title="Your organisations"
+          description="An organisation runs one or more conferences. It is where members and billing live."
+          actions={
+            <form action="/auth/sign-out" method="post">
+              <Button variant="ghost" type="submit">
+                <LogOut size={16} aria-hidden />
+                Sign out
+              </Button>
+            </form>
+          }
+        />
 
-      {organizations.length > 0 ? (
-        <ul className="cards">
-          {organizations.map((organization) => (
-            <li key={organization.id} className="card">
-              <Link href={`/app/${organization.slug}`}>
-                <strong>{organization.name}</strong>
-              </Link>
-              <p className="muted">
-                /{organization.slug} · {organization.role.toLowerCase()}
-              </p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted">
-          You are not in an organisation yet. Create one, or ask someone to invite you.
-        </p>
-      )}
+        {organizations.length > 0 ? (
+          <ul className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {organizations.map((organization) => (
+              <li key={organization.id}>
+                <Link
+                  href={`/app/${organization.slug}`}
+                  className="block rounded-card border border-edge bg-surface p-5 transition-colors duration-micro ease-standard hover:border-edge-strong hover:bg-surface-sunken"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="font-heading text-h3 text-ink">{organization.name}</span>
+                    <RoleBadge role={organization.role} />
+                  </div>
+                  <p className="mt-1 text-body-sm text-ink-secondary">/{organization.slug}</p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Card className="mb-6">
+            <EmptyState
+              icon={Building2}
+              title="You are not in an organisation yet"
+              description="Create one below, or ask whoever runs your conference to invite you."
+            />
+          </Card>
+        )}
 
-      <section className="panel">
-        <h2>Create an organisation</h2>
-        <CreateOrganizationForm />
-      </section>
+        <Card className="max-w-xl">
+          <CardHeader
+            title="Create an organisation"
+            description="You will be its owner. You can invite the rest of your team straight after."
+          />
+          <CreateOrganizationForm />
+        </Card>
+      </div>
     </main>
   )
 }

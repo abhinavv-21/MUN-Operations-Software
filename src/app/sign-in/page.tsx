@@ -20,10 +20,13 @@ export default async function SignInPage({
   if (claims) redirect(safeNextPath(next) as Route)
 
   return (
-    <main className="centred">
-      <section className="panel">
-        <h1>{PRODUCT_NAME}</h1>
-        <p className="muted">Sign in to run your conference.</p>
+    <main className="ground-app grid min-h-dvh place-items-center px-5 py-12">
+      <section className="w-full max-w-md rounded-card border border-edge bg-surface p-6 md:p-8">
+        <h1 className="font-heading text-h1 text-ink">{PRODUCT_NAME}</h1>
+        <span className="page-rule mt-3" aria-hidden />
+        <p className="mt-4 mb-6 text-body text-ink-secondary">
+          Sign in to run your conference.
+        </p>
         <SignInForm next={next} initialError={error} />
       </section>
     </main>

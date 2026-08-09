@@ -1,10 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { Mail } from 'lucide-react'
+import { Button } from '@/components/ui/Button.tsx'
+import { Field, Input } from '@/components/ui/Field.tsx'
 import { supabaseBrowser } from '@/lib/supabase/client.ts'
 
 const ERRORS: Record<string, string> = {
-  missing_code: 'That sign-in link was incomplete. Try again.',
+  missing_code: 'That sign-in link was incomplete. Request a new one.',
   exchange_failed: 'That sign-in link has expired. Request a new one.',
 }
 
@@ -12,11 +15,13 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(initialError ? (ERRORS[initialError] ?? null) : null)
+  const [error, setError] = useState<string | null>(
+    initialError ? (ERRORS[initialError] ?? null) : null,
+  )
 
   const callback = (path: string) => {
     const url = new URL('/auth/callback', window.location.origin)
-    if (path) url.searchParams.set('next', path)
+    url.searchParams.set('next', path)
     return url.toString()
   }
 
@@ -28,7 +33,7 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
       options: { redirectTo: callback(next ?? '/app') },
     })
     if (oauthError) {
-      setError('Google sign-in is unavailable right now.')
+      setError('Google sign-in is unavailable right now. Use an email link instead.')
       setBusy(false)
     }
   }
@@ -53,40 +58,54 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
 
   if (sent) {
     return (
-      <p role="status">
-        Check <strong>{email}</strong> for a sign-in link. It is valid for one hour.
-      </p>
+      <div role="status" className="rounded-card border border-edge bg-accent-wash p-5">
+        <Mail size={20} className="text-accent" aria-hidden />
+        <p className="mt-2 text-body text-ink">
+          Check <strong>{email}</strong> for a sign-in link.
+        </p>
+        <p className="mt-1 text-body-sm text-ink-secondary">It is valid for one hour.</p>
+      </div>
     )
   }
 
   return (
-    <div className="stack">
-      <button type="button" onClick={signInWithGoogle} disabled={busy} className="button">
+    <div className="flex flex-col gap-5">
+      <Button variant="secondary" onClick={signInWithGoogle} disabled={busy}>
         Continue with Google
-      </button>
+      </Button>
 
-      <p className="divider">or</p>
+      <div className="flex items-center gap-3" aria-hidden>
+        <span className="h-px flex-1 bg-edge" />
+        <span className="text-label uppercase text-ink-tertiary">or</span>
+        <span className="h-px flex-1 bg-edge" />
+      </div>
 
-      <form onSubmit={signInWithEmail} className="stack">
-        <label htmlFor="email">Email address</label>
-        <input
-          id="email"
-          type="email"
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="you@school.edu"
-        />
-        <button type="submit" disabled={busy || email.length === 0} className="button">
-          {busy ? 'Sending…' : 'Email me a sign-in link'}
-        </button>
+      <form onSubmit={signInWithEmail} className="flex flex-col gap-4">
+        <Field label="Email address" required>
+          {({ id, describedBy, invalid }) => (
+            <Input
+              id={id}
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              aria-describedby={describedBy}
+              aria-invalid={invalid}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@school.edu"
+            />
+          )}
+        </Field>
+
+        {/* No password field anywhere. Supabase owns credentials, and a magic
+            link means there is no password to reset, leak or store. */}
+        <Button type="submit" loading={busy} disabled={email.length === 0}>
+          Email me a sign-in link
+        </Button>
       </form>
 
-      {/* No password field anywhere. Supabase owns credentials, and a magic
-          link means there is no password to reset, leak or store. */}
       {error ? (
-        <p role="alert" className="error">
+        <p role="alert" className="text-body-sm text-danger">
           {error}
         </p>
       ) : null}

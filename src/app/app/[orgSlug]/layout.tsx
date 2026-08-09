@@ -1,7 +1,9 @@
-import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { pageCtx } from '@/server/page-ctx.ts'
+import { AppShell } from '@/components/layout/AppShell.tsx'
+import { ThemeStyle } from '@/components/ThemeStyle.tsx'
 import { requireOrg } from '@/server/ctx.ts'
+import { pageCtx } from '@/server/page-ctx.ts'
+import { getOrganizationThemeCss } from '@/server/services/theme.ts'
 
 /**
  * The organisation shell.
@@ -10,7 +12,11 @@ import { requireOrg } from '@/server/ctx.ts'
  * translates the `ApiError.notFound` that `createCtx` throws when membership
  * resolution finds nothing. It renders identically to a slug that was never
  * registered, which is the point: whether `harvard` is a customer is not
- * something a stranger should be able to determine by typing it.
+ * something a stranger should determine by typing it.
+ *
+ * The theme block is rendered here, after the root layout's default, so it
+ * wins on source order. Both are in the document before any content, so there
+ * is no flash of the wrong palette — with JavaScript disabled entirely.
  */
 export default async function OrgLayout({
   children,
@@ -23,26 +29,20 @@ export default async function OrgLayout({
   const ctx = await pageCtx({ organizationSlug: orgSlug })
   const membership = requireOrg(ctx)
 
-  const canManage = membership.orgRole === 'OWNER' || membership.canManageMembers
+  const themeCss = await getOrganizationThemeCss(membership.organizationId)
+  const canManageMembers = membership.orgRole === 'OWNER' || membership.canManageMembers
 
   return (
-    <div className="shell">
-      <nav className="shell-nav">
-        <Link href="/app" className="muted">
-          ← All organisations
-        </Link>
-        <strong>{membership.organizationName}</strong>
-        <Link href={`/app/${orgSlug}`}>Overview</Link>
-        {canManage ? <Link href={`/app/${orgSlug}/members`}>Members</Link> : null}
-        <span className="grow" />
-        <span className="muted">{ctx.user?.email}</span>
-        <form action="/auth/sign-out" method="post">
-          <button type="submit" className="button subtle">
-            Sign out
-          </button>
-        </form>
-      </nav>
-      <div className="shell-body">{children}</div>
-    </div>
+    <>
+      <ThemeStyle css={themeCss} />
+      <AppShell
+        orgSlug={orgSlug}
+        organizationName={membership.organizationName}
+        userEmail={ctx.user?.email ?? ''}
+        canManageMembers={canManageMembers}
+      >
+        {children}
+      </AppShell>
+    </>
   )
 }

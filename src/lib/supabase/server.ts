@@ -23,7 +23,7 @@ export async function createSupabaseServerClient() {
           }
         } catch {
           // Server Components cannot set cookies. This is not an error to
-          // recover from: middleware.ts refreshes the session on every request
+          // recover from: proxy.ts refreshes the session on every request
           // before the render begins, so by the time a Server Component asks,
           // the cookie is already current.
         }

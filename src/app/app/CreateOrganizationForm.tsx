@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { Button } from '@/components/ui/Button.tsx'
+import { Field, Input } from '@/components/ui/Field.tsx'
 
 /** Mirrors `suggestSlug` on the server. The server value is authoritative. */
 function slugify(name: string): string {
@@ -34,12 +36,12 @@ export function CreateOrganizationForm() {
       body: JSON.stringify({ name, slug: effectiveSlug }),
     })
 
-    const body = await response.json()
+    const body = await response.json().catch(() => ({}))
     setBusy(false)
 
     if (!response.ok) {
       // Every failure is { error, code, details? }, so one branch reads them
-      // all. 422 carries [{ path, message }] from the validator.
+      // all. A 422 carries [{ path, message }] from the validator.
       const detail = Array.isArray(body.details) ? body.details[0]?.message : undefined
       setError(detail ?? body.error ?? 'Something went wrong')
       return
@@ -50,37 +52,48 @@ export function CreateOrganizationForm() {
   }
 
   return (
-    <form onSubmit={submit} className="stack">
-      <label htmlFor="org-name">Name</label>
-      <input
-        id="org-name"
-        required
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        placeholder="Lucknow Public School Model UN"
-      />
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <Field label="Name" required>
+        {({ id, describedBy, invalid }) => (
+          <Input
+            id={id}
+            required
+            value={name}
+            aria-describedby={describedBy}
+            aria-invalid={invalid}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Lucknow Public School Model UN"
+          />
+        )}
+      </Field>
 
-      <label htmlFor="org-slug">Address</label>
-      <input
-        id="org-slug"
-        required
-        value={effectiveSlug}
-        onChange={(event) => {
-          setSlugTouched(true)
-          setSlug(event.target.value)
-        }}
-        placeholder="lps-mun"
-      />
-      <p className="muted">
-        Your conferences will live at <code>/app/{effectiveSlug || 'your-address'}</code>.
-      </p>
+      <Field
+        label="Address"
+        hint={`Your conferences will live at /app/${effectiveSlug || 'your-address'}`}
+      >
+        {({ id, describedBy }) => (
+          <Input
+            id={id}
+            required
+            value={effectiveSlug}
+            aria-describedby={describedBy}
+            onChange={(event) => {
+              setSlugTouched(true)
+              setSlug(event.target.value)
+            }}
+            placeholder="lps-mun"
+          />
+        )}
+      </Field>
 
-      <button type="submit" disabled={busy || name.length < 2} className="button">
-        {busy ? 'Creating…' : 'Create organisation'}
-      </button>
+      <div>
+        <Button type="submit" loading={busy} disabled={name.length < 2}>
+          Create organisation
+        </Button>
+      </div>
 
       {error ? (
-        <p role="alert" className="error">
+        <p role="alert" className="text-body-sm text-danger">
           {error}
         </p>
       ) : null}

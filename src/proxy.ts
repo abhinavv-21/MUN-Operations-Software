@@ -4,6 +4,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 /**
  * Refreshes the Supabase session cookie. That is the entire job.
  *
+ * Named `proxy` rather than `middleware`: Next 16.3 renamed the convention and
+ * warns on the old one at build time.
+ *
  * This runs on the Edge runtime, so it must never import Prisma — no database
  * client, no `@/server/*`, nothing that reaches for a TCP socket. Authorization
  * decisions belong in the service layer, where Server Components hit them too;
@@ -14,7 +17,7 @@ import { NextResponse, type NextRequest } from 'next/server'
  * expired and needs exchanging. `getUser()` is a network round trip on every
  * single request, including the ones for a session that is perfectly valid.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
