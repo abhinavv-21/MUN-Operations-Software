@@ -132,4 +132,67 @@ describeWithDb('tenant scoping', () => {
       } as Parameters<typeof a.committee.upsert>[0]),
     ).rejects.toThrow(/upsert is not available/)
   })
+  /* ------------------------------------------------------------------------ */
+  /* Org-revocable models                                                      */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * `ConferenceRole` is the one model that may be deleted in bulk with only an
+   * organisation in scope, and only through `deleteMany`.
+   *
+   * It exists because removing somebody from an organisation has to take their
+   * grants on every conference in it, and there is no single conference to
+   * scope that to. Before it existed, `removeMember` answered 500 on its
+   * success path and nothing caught it — the only test named the last-owner
+   * refusal, which returns before reaching the line. See docs/07-TRAPS.md.
+   */
+  it('revokes a person\'s conference grants across one organisation', async () => {
+    const user = await unsafeDb.user.create({
+      data: { authUserId: 'zz_auth_revoke', email: 'revoke@example.test' },
+    })
+    await unsafeDb.conferenceRole.create({
+      data: { userId: user.id, conferenceId: fixture.conferenceA.id, role: 'CONTRIBUTOR' },
+    })
+    await unsafeDb.conferenceRole.create({
+      data: { userId: user.id, conferenceId: fixture.conferenceB.id, role: 'CONTRIBUTOR' },
+    })
+
+    const a = forOrganization(fixture.orgA.id)
+    const { count } = await a.conferenceRole.deleteMany({ where: { userId: user.id } })
+
+    // One, not two. The other organisation's grant is untouched, because the
+    // injected filter is still `{ conference: { organizationId } }`.
+    expect(count).toBe(1)
+    expect(await unsafeDb.conferenceRole.count({ where: { userId: user.id } })).toBe(1)
+    expect(
+      await unsafeDb.conferenceRole.count({
+        where: { userId: user.id, conferenceId: fixture.conferenceB.id },
+      }),
+    ).toBe(1)
+  })
+
+  it('still refuses to create or update a grant without a conference in scope', async () => {
+    const orgOnly = forOrganization(fixture.orgA.id)
+
+    // The capability is deletion only. Nothing here can write a value across
+    // conferences, which is what keeps the widening narrow.
+    await expect(
+      orgOnly.conferenceRole.updateMany({ where: {}, data: { role: 'ADMIN' } }),
+    ).rejects.toThrow(/not otherwise written to/)
+
+    await expect(
+      orgOnly.conferenceRole.create({
+        data: { userId: 'x', conferenceId: fixture.conferenceB.id, role: 'ADMIN' },
+      } as Parameters<typeof orgOnly.conferenceRole.create>[0]),
+    ).rejects.toThrow(/not otherwise written to/)
+  })
+
+  it('grants no such capability to an operational model', async () => {
+    const orgOnly = forOrganization(fixture.orgA.id)
+
+    // Committee is deliberately not org-reachable and not org-revocable: an
+    // organiser with a grant on one conference must not be able to reach
+    // another's operational data, even to delete it.
+    await expect(orgOnly.committee.deleteMany({ where: {} })).rejects.toThrow(/conference-scoped/)
+  })
 })

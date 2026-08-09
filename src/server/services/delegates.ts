@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { requireConference, type Ctx } from '../ctx.ts'
+import { ApiError } from '../errors.ts'
+import { requireConference, requireConferenceAdmin, type Ctx } from '../ctx.ts'
 
 export const delegateFiltersSchema = z.object({
   search: z.string().trim().max(120).optional(),
@@ -37,6 +38,78 @@ export async function listDelegates(ctx: Ctx, filters: DelegateFilters) {
       },
     },
   })
+}
+
+export const updateDelegateSchema = z
+  .object({
+    fullName: z.string().trim().min(2, 'Enter their name').max(120).optional(),
+    email: z.email('Enter a valid email address').optional(),
+    phone: z.string().trim().max(40).nullish(),
+    schoolName: z.string().trim().max(160).nullish(),
+    grade: z.string().trim().max(40).nullish(),
+  })
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
+    message: 'Change something',
+  })
+
+export type UpdateDelegateInput = z.infer<typeof updateDelegateSchema>
+
+/**
+ * Corrects a delegate's details.
+ *
+ * This is the write the offline queue must **not** hold, and it is worth being
+ * explicit about why, because it looks no more dangerous than a check-in.
+ *
+ * A check-in is append-only from the operator's side: two people marking the
+ * same delegate present agree. An edit overwrites. Queue one and you have
+ * queued a conflict — the registration desk fixes a spelling at 09:10 with no
+ * signal, the secretariat fixes the same field differently at 09:40 with
+ * signal, and at 09:50 the queue flushes and silently reinstates the older
+ * value over the newer one. Nobody sees it happen and the log shows both writes
+ * succeeding.
+ *
+ * So this fails immediately when there is no connection, with a message saying
+ * so. The person retypes it in thirty seconds; nobody loses an hour to a
+ * mystery.
+ */
+export async function updateDelegate(ctx: Ctx, delegateId: string, input: UpdateDelegateInput) {
+  requireConferenceAdmin(ctx)
+
+  const existing = await ctx.db.delegate.findFirst({ where: { id: delegateId } })
+  if (!existing) throw ApiError.notFound('Not found')
+
+  const updated = await ctx.db.delegate.update({
+    where: { id: existing.id },
+    data: {
+      ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
+      ...(input.email !== undefined ? { email: input.email } : {}),
+      ...(input.phone !== undefined ? { phone: input.phone } : {}),
+      ...(input.schoolName !== undefined ? { schoolName: input.schoolName } : {}),
+      ...(input.grade !== undefined ? { grade: input.grade } : {}),
+    },
+  })
+
+  await ctx.audit.record({
+    action: 'delegate.update',
+    entityType: 'Delegate',
+    entityId: updated.id,
+    payloadBefore: {
+      fullName: existing.fullName,
+      email: existing.email,
+      phone: existing.phone,
+      schoolName: existing.schoolName,
+      grade: existing.grade,
+    },
+    payloadAfter: {
+      fullName: updated.fullName,
+      email: updated.email,
+      phone: updated.phone,
+      schoolName: updated.schoolName,
+      grade: updated.grade,
+    },
+  })
+
+  return updated
 }
 
 /**

@@ -71,6 +71,39 @@ enum ConferenceStatus {
   ARCHIVED
 }
 
+/// Three states, not two. "Absent" and "not yet marked" are different facts,
+/// and a boolean cannot hold the difference: a delegate who has not reached the
+/// desk yet is not the same as one who never came, and only one of those is
+/// worth chasing at 09:20.
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+}
+
+enum LogisticsCategory {
+  EQUIPMENT
+  STATIONERY
+  REFRESHMENT
+  TECHNICAL
+  MEDICAL
+  TRANSPORT
+  OTHER
+}
+
+enum LogisticsStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
+enum LogisticsPriority {
+  LOW
+  NORMAL
+  URGENT
+}
+
 /// The billing and membership boundary. Unscoped: resolving one is how a
 /// request finds out which tenant it is in.
 model Organization {
@@ -140,6 +173,15 @@ model User {
   invitationsSent     Invitation[]     @relation("InvitationInvitedBy")
   invitationsAccepted Invitation[]     @relation("InvitationAcceptedBy")
   auditLogs           AuditLog[]
+
+  // Conference-day attribution. Every one of these is `onDelete: SetNull`: the
+  // record of what happened outlives the account that did it, because removing
+  // a volunteer after the conference must not silently rewrite who checked
+  // three hundred delegates in.
+  attendanceMarked     AttendanceRecord[]  @relation("AttendanceMarkedBy")
+  logisticsRequested   LogisticsRequest[]  @relation("LogisticsRequestedBy")
+  logisticsResolved    LogisticsRequest[]  @relation("LogisticsResolvedBy")
+  awardsGiven          Award[]             @relation("AwardAwardedBy")
 }
 
 /// A grant of one conference to one user.
@@ -227,6 +269,9 @@ model Conference {
   assignments   Assignment[]
   integrations  ConferenceIntegration[]
   auditLogs     AuditLog[]
+  attendance    AttendanceRecord[]
+  logistics     LogisticsRequest[]
+  awards        Award[]
 
   /// Scoped to the organisation, so two organisations may both run a
   /// conference called `mun-x`.
@@ -325,6 +370,8 @@ model Committee {
   conference  Conference         @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
   countries   CommitteeCountry[]
   assignments Assignment[]
+  logistics   LogisticsRequest[]
+  awards      Award[]
 
   /// Scoped by conference, not global. A society running MUN X and MUN XI must
   /// be able to have a UNSC in both — the reference product's global uniqueness
@@ -444,6 +491,8 @@ model Delegate {
   conference   Conference    @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
   registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
   assignment   Assignment?
+  attendance   AttendanceRecord[]
+  awards       Award[]
 
   @@unique([conferenceId, email])
   @@index([conferenceId])
@@ -514,4 +563,140 @@ model ConferenceIntegration {
 
   @@unique([conferenceId, kind])
   @@index([conferenceId])
+}
+
+/// One delegate, one day, one state.
+///
+/// Keyed by day rather than by session. A conference runs two or three days and
+/// the desk marks people once each morning; per-session attendance is a
+/// register nobody fills in, and a half-filled register is worse than none
+/// because it looks authoritative.
+///
+/// `@@unique([conferenceId, delegateId, day])` is doing real work beyond
+/// tidiness: it is the **idempotency key for the offline queue**. A check-in
+/// made on venue wifi is replayed when the connection returns, and it may be
+/// replayed after the operator already marked the same delegate from another
+/// device. The natural key makes the second write a no-op instead of a second
+/// row, so the queue needs no client-generated token here. Logistics requests
+/// have no natural key and carry one — see `LogisticsRequest.clientRequestId`.
+model AttendanceRecord {
+  id           String @id @default(uuid(7))
+  conferenceId String
+  delegateId   String
+
+  /// A calendar date, stored as one. `DATE` and not `TIMESTAMP` because the
+  /// day a delegate was marked present is a fact about the venue's calendar,
+  /// not an instant: storing 2026-03-14T00:00+05:30 and reading it back in UTC
+  /// moves attendance to the thirteenth.
+  day DateTime @db.Date
+
+  status AttendanceStatus @default(PRESENT)
+
+  /// When the desk marked them, which is not the same as `day` and is the
+  /// column that answers "were they late by two minutes or by two hours".
+  markedAt       DateTime  @default(now())
+  markedByUserId String?
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  delegate   Delegate   @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  markedBy   User?      @relation("AttendanceMarkedBy", fields: [markedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([conferenceId, delegateId, day])
+  @@index([conferenceId, day])
+  @@index([delegateId])
+}
+
+/// Something the conference needs, and what happened about it.
+///
+/// The other write that survives being offline. A projector dies in a basement
+/// committee room with no signal, and the request has to be capturable there or
+/// it is captured nowhere.
+model LogisticsRequest {
+  id           String @id @default(uuid(7))
+  conferenceId String
+
+  /// Optional: "the lift is stuck" belongs to no committee.
+  committeeId String?
+
+  category LogisticsCategory @default(OTHER)
+  priority LogisticsPriority @default(NORMAL)
+  status   LogisticsStatus   @default(OPEN)
+
+  title  String
+  detail String?
+
+  requestedByUserId String?
+
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  resolution       String?
+
+  /// The idempotency key for the offline queue, generated by the browser at
+  /// the moment the request is typed.
+  ///
+  /// A queued POST is replayed when the connection returns, and there is no
+  /// natural key that distinguishes "more chairs in UNSC" typed twice on
+  /// purpose from the same request sent twice by the queue. Without this, a
+  /// flaky connection multiplies every request by however many times the flush
+  /// ran. Nullable, because a request typed online never needs one.
+  clientRequestId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conference  Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  committee   Committee? @relation(fields: [committeeId], references: [id], onDelete: SetNull)
+  requestedBy User?      @relation("LogisticsRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  resolvedBy  User?      @relation("LogisticsResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([conferenceId, clientRequestId])
+  @@index([conferenceId, status])
+  @@index([committeeId])
+}
+
+/// An award, given in one committee to one delegate.
+///
+/// The title is free text with a suggested list in the UI, not an enum. Every
+/// circuit names these differently — Best Delegate, Outstanding Delegate, High
+/// Commendation, Special Mention, Verbal Mention — and an enum would either be
+/// wrong for most conferences or grow a catch-all OTHER that carries the real
+/// name in a second column.
+model Award {
+  id           String @id @default(uuid(7))
+  conferenceId String
+  committeeId  String
+  delegateId   String
+
+  title String
+  /// Optional ordering, so a printed list reads Best Delegate first rather
+  /// than alphabetically. Null sorts last.
+  rank  Int?
+  note  String?
+
+  awardedAt       DateTime @default(now())
+  awardedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conference Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  committee  Committee  @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  delegate   Delegate   @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  awardedBy  User?      @relation("AwardAwardedBy", fields: [awardedByUserId], references: [id], onDelete: SetNull)
+
+  /// One delegate cannot hold the same award twice in one committee.
+  ///
+  /// Deliberately not `[conferenceId, committeeId, title]`, which would be the
+  /// tempting stronger rule: several delegates share a Verbal Mention in the
+  /// same committee at most conferences, and a constraint that forbids the
+  /// normal case gets worked around by typing "Verbal Mention 2".
+  @@unique([conferenceId, committeeId, delegateId, title])
+  @@index([conferenceId])
+  @@index([committeeId])
+  @@index([delegateId])
 }

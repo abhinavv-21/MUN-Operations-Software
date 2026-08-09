@@ -14,7 +14,12 @@
 
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@/generated/prisma/client.ts'
-import { isOrgModel, isOrgReachableModel, isTenantModel } from './models.ts'
+import {
+  isOrgModel,
+  isOrgReachableModel,
+  isOrgRevocableModel,
+  isTenantModel,
+} from './models.ts'
 
 function createClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL
@@ -152,9 +157,28 @@ function scopeKeyFor(model: string, operation: string, current: Scope): ScopeFil
       return { kind: 'via-conference', organizationId: current.organizationId }
     }
 
+    /*
+      Bulk revocation across an organisation. `deleteMany` and nothing else.
+
+      Removing somebody from the organisation has to take their grants on every
+      conference in it, and there is no single conference to scope that to.
+      Still filtered by `{ conference: { organizationId } }`, so it reaches no
+      other tenant. See ORG_REVOCABLE_MODELS in models.ts for the full argument
+      and for why this is a separate list rather than a widening of the one
+      above.
+    */
+    if (
+      current.organizationId &&
+      isOrgRevocableModel(model) &&
+      operation === 'deleteMany'
+    ) {
+      return { kind: 'via-conference', organizationId: current.organizationId }
+    }
+
     if (current.organizationId && isOrgReachableModel(model)) {
       throw new Error(
-        `${model} may be read across an organisation but not written to. ` +
+        `${model} may be read across an organisation, and deleted in bulk if it is ` +
+          `org-revocable, but not otherwise written to. ` +
           `Scope to a single conference before ${operation}.`,
       )
     }

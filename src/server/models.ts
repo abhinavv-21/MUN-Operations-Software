@@ -23,6 +23,9 @@ export const TENANT_MODELS = [
   'Delegate',
   'ConferenceIntegration',
   'Assignment',
+  'AttendanceRecord',
+  'LogisticsRequest',
+  'Award',
 ] as const
 
 /**
@@ -46,6 +49,37 @@ export const TENANT_MODELS = [
  * promise made by a service.
  */
 export const ORG_REACHABLE_MODELS = ['ConferenceRole'] as const
+
+/**
+ * Org-reachable models that may also be **deleted in bulk** with only an
+ * organisation in scope, filtered through their `conference` relation.
+ *
+ * One model, one operation — `deleteMany` — and it exists for exactly one
+ * action: removing somebody from the organisation.
+ *
+ * That action is inherently organisation-wide. A person leaving takes their
+ * grants on every conference with them, and the alternative to allowing this is
+ * worse than the rule it bends: leaving the rows behind means re-inviting
+ * somebody silently restores access they used to have, which is a security bug
+ * dressed as tidiness. Doing it one conference at a time outside the
+ * transaction is worse again — a failure halfway leaves the membership deleted
+ * and the grants live.
+ *
+ * Named as its own list rather than folded into `ORG_REACHABLE_MODELS` because
+ * the narrowness *is* the design:
+ *
+ * - **`deleteMany` only.** No create, no update, no `updateMany`. Nothing here
+ *   can write a value across conferences, only revoke.
+ * - **Still filtered by organisation.** The injected clause is
+ *   `{ conference: { organizationId } }`, so this cannot reach another tenant's
+ *   grants any more than a read can.
+ * - **Membership tables only**, for the same reason `ORG_REACHABLE_MODELS` is:
+ *   an operational model must stay hard-bounded to one conference.
+ *
+ * This was added in Stage 7 after `removeMember` was found to answer 500 on its
+ * success path — see docs/07-TRAPS.md.
+ */
+export const ORG_REVOCABLE_MODELS = ['ConferenceRole'] as const
 
 /**
  * Scoped by `organizationId`. Membership, tenancy and the audit trail.
@@ -77,9 +111,14 @@ const tenantSet: ReadonlySet<string> = new Set(TENANT_MODELS)
 const orgSet: ReadonlySet<string> = new Set(ORG_MODELS)
 const globalSet: ReadonlySet<string> = new Set(GLOBAL_MODELS)
 const orgReachableSet: ReadonlySet<string> = new Set(ORG_REACHABLE_MODELS)
+const orgRevocableSet: ReadonlySet<string> = new Set(ORG_REVOCABLE_MODELS)
 
 export function isOrgReachableModel(model: string): boolean {
   return orgReachableSet.has(model)
+}
+
+export function isOrgRevocableModel(model: string): boolean {
+  return orgRevocableSet.has(model)
 }
 
 export function isTenantModel(model: string): boolean {

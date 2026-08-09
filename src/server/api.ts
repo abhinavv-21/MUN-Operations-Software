@@ -88,6 +88,7 @@ export function withApi<P = Record<string, never>>(
     context: { params: Promise<P> } | undefined,
   ): Promise<Response> => {
     let ctx: Ctx | undefined
+    let response: Response
 
     try {
       const params = ((await context?.params) ?? {}) as P
@@ -108,28 +109,45 @@ export function withApi<P = Record<string, never>>(
 
       ctx = await createCtx({ ...fromPath, ...scopeOptions, request })
 
-      const response = await handler({ request, params, ctx })
-
-      // The reference enforces this with `auditGuard` middleware on
-      // res.on('finish'). It reads better here, because the wrapper already
-      // knows the method, the outcome and whether a row was written.
-      if (
-        process.env.NODE_ENV === 'development' &&
-        options.audit &&
-        MUTATING_METHODS.has(request.method) &&
-        response.ok &&
-        !ctx.audit.written
-      ) {
-        console.warn(
-          `[audit] ${request.method} ${new URL(request.url).pathname} succeeded but wrote no ` +
-            `AuditLog row (expected "${options.audit}")`,
-        )
-      }
-
-      return response
+      response = await handler({ request, params, ctx })
     } catch (error) {
       return errorResponse(toApiError(error))
     }
+
+    /*
+      The reference enforces this with `auditGuard` middleware on
+      res.on('finish'). It reads better here, because the wrapper already knows
+      the method, the outcome and whether a row was written.
+
+      Under Vitest it **throws**, and it is checked outside the catch so the
+      throw reaches the test runner instead of being serialised into a tidy 500
+      by this wrapper's own error handling.
+
+      A warning is a string in a scrollback that nobody reads, and the guarantee
+      Stage 7 is asked for — every mutating admin route writes an AuditLog row —
+      cannot be carried by one. `tests/audit.manifest.test.ts` proves every such
+      route *declares* an action; this is what proves the declaration is
+      honoured, on every route any integration test exercises.
+
+      Deliberately not escalated in development. Throwing there would break a
+      demo halfway through a conference over a missing log line, which is the
+      wrong trade at that moment.
+    */
+    if (
+      options.audit &&
+      MUTATING_METHODS.has(request.method) &&
+      response.ok &&
+      !ctx.audit.written
+    ) {
+      const complaint =
+        `${request.method} ${new URL(request.url).pathname} succeeded but wrote no ` +
+        `AuditLog row (expected "${options.audit}")`
+
+      if (process.env.VITEST) throw new Error(`[audit] ${complaint}`)
+      if (process.env.NODE_ENV === 'development') console.warn(`[audit] ${complaint}`)
+    }
+
+    return response
   }
 }
 

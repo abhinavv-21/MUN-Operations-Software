@@ -139,7 +139,9 @@ export async function listAllocations(ctx: Ctx) {
   requireConference(ctx)
 
   return ctx.db.assignment.findMany({
-    orderBy: [{ committeeId: 'asc' }, { country: 'asc' }],
+    // By committee code, so the board reads in the same order as every other
+    // committee list in the product.
+    orderBy: [{ committee: { code: 'asc' } }, { country: 'asc' }],
     include: {
       committee: { select: { code: true, name: true } },
       delegate: { select: { fullName: true, email: true, schoolName: true } },

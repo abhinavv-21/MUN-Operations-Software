@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Upload, Users, X } from 'lucide-react'
+import { Pencil, Upload, Users, X } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge.tsx'
 import { Button } from '@/components/ui/Button.tsx'
 import { CapacityMeter, Card, CardHeader } from '@/components/ui/Card.tsx'
@@ -18,7 +18,9 @@ interface Delegate {
   id: string
   fullName: string
   email: string
+  phone: string | null
   schoolName: string | null
+  grade: string | null
   assignment: { id: string; country: string; committee: { id: string; code: string } } | null
 }
 
@@ -58,6 +60,8 @@ export function DelegatesClient({
   const [matrixOpen, setMatrixOpen] = useState(false)
   const [matrixCsv, setMatrixCsv] = useState('')
   const [matrixSummary, setMatrixSummary] = useState<MatrixSummary | null>(null)
+  const [editing, setEditing] = useState<Delegate | null>(null)
+  const [edit, setEdit] = useState({ fullName: '', email: '', phone: '', schoolName: '', grade: '' })
 
   const filters = { search: search || undefined, allocation }
 
@@ -97,6 +101,26 @@ export function DelegatesClient({
     },
   })
 
+  /*
+    Editing a delegate is the write that must NOT survive being offline.
+
+    It goes through `apiFetch` and not `sendOrQueue`, so an unreachable API
+    becomes an ApiError with code 0 that lands in `ErrorState` immediately —
+    "You appear to be offline. The request was not sent." — rather than sitting
+    in a queue to be replayed over whatever someone else changed in the
+    meantime. `networkMode: 'always'` on mutations is what stops React Query
+    swallowing it into a promise that never settles. See
+    src/lib/offline/policy.ts for the full reasoning.
+  */
+  const editDelegate = useMutation({
+    mutationFn: (input: { id: string; body: Record<string, string | null> }) =>
+      apiFetch(`${base}/delegates/${input.id}`, { method: 'PATCH', body: input.body }),
+    onSuccess: () => {
+      setEditing(null)
+      refresh()
+    },
+  })
+
   const unallocate = useMutation({
     mutationFn: (delegateId: string) =>
       apiFetch(`${base}/allocations/${delegateId}`, { method: 'DELETE' }),
@@ -116,7 +140,8 @@ export function DelegatesClient({
     },
   })
 
-  const mutationError = allocate.error ?? unallocate.error ?? importMatrix.error
+  const mutationError =
+    allocate.error ?? unallocate.error ?? importMatrix.error ?? editDelegate.error
   const committees = data.data?.committees ?? []
 
   const columns: Column<Delegate>[] = [
@@ -156,6 +181,24 @@ export function DelegatesClient({
         if (!canEdit) return null
         return (
           <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Edit ${row.fullName}`}
+              data-testid="edit-delegate"
+              onClick={() => {
+                setEditing(row)
+                setEdit({
+                  fullName: row.fullName,
+                  email: row.email,
+                  phone: row.phone ?? '',
+                  schoolName: row.schoolName ?? '',
+                  grade: row.grade ?? '',
+                })
+              }}
+            >
+              <Pencil size={16} aria-hidden />
+            </Button>
             <Button
               variant={row.assignment ? 'ghost' : 'primary'}
               size="sm"
@@ -377,6 +420,97 @@ export function DelegatesClient({
           {/* The list is a convenience, not the check. Two organisers can pick
               the same country a second apart, and the server is what refuses
               the second one. */}
+        </div>
+      </Modal>
+
+      <Modal
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null)
+        }}
+        title={editing ? `Edit ${editing.fullName}` : 'Edit delegate'}
+        description="Corrections only. This one will not save without a connection."
+        holdsInput
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button
+              data-testid="save-delegate"
+              loading={editDelegate.isPending}
+              disabled={edit.fullName.trim().length < 2 || edit.email.trim() === ''}
+              onClick={() =>
+                editing &&
+                editDelegate.mutate({
+                  id: editing.id,
+                  body: {
+                    fullName: edit.fullName.trim(),
+                    email: edit.email.trim(),
+                    // Empty means cleared, which is a different instruction from
+                    // "leave it alone" and has to reach the API as null.
+                    phone: edit.phone.trim() || null,
+                    schoolName: edit.schoolName.trim() || null,
+                    grade: edit.grade.trim() || null,
+                  },
+                })
+              }
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Field label="Name" required>
+            {({ id }) => (
+              <Input
+                id={id}
+                data-testid="edit-name"
+                value={edit.fullName}
+                onChange={(event) => setEdit({ ...edit, fullName: event.target.value })}
+              />
+            )}
+          </Field>
+          <Field label="Email" required>
+            {({ id }) => (
+              <Input
+                id={id}
+                type="email"
+                value={edit.email}
+                onChange={(event) => setEdit({ ...edit, email: event.target.value })}
+              />
+            )}
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Phone">
+              {({ id }) => (
+                <Input
+                  id={id}
+                  value={edit.phone}
+                  onChange={(event) => setEdit({ ...edit, phone: event.target.value })}
+                />
+              )}
+            </Field>
+            <Field label="Grade">
+              {({ id }) => (
+                <Input
+                  id={id}
+                  value={edit.grade}
+                  onChange={(event) => setEdit({ ...edit, grade: event.target.value })}
+                />
+              )}
+            </Field>
+          </div>
+          <Field label="School">
+            {({ id }) => (
+              <Input
+                id={id}
+                value={edit.schoolName}
+                onChange={(event) => setEdit({ ...edit, schoolName: event.target.value })}
+              />
+            )}
+          </Field>
         </div>
       </Modal>
 

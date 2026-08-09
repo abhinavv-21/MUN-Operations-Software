@@ -8,6 +8,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils.ts'
 
 const CONTROL = cn(
@@ -94,10 +95,30 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
  */
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
   function Select({ className, children, ...props }, ref) {
+    /*
+      `appearance-none` removes the platform arrow, so one has to be put back.
+
+      Without it a select is pixel-identical to a text input: on the attendance
+      and audit screens the committee and action filters read as empty boxes
+      somebody forgot to type into, and nothing suggests they can be opened. The
+      chevron is `pointer-events-none` so clicking it still opens the select,
+      and it sits in the padding `pr-9` reserves rather than over the text.
+    */
     return (
-      <select ref={ref} className={cn(CONTROL, 'appearance-none py-2 pr-8', className)} {...props}>
-        {children}
-      </select>
+      // The caller's className goes on the wrapper, not the control: every
+      // className passed to a Select in this codebase is a width, and a width
+      // on the inner element leaves the wrapper stretching the flex row it sits
+      // in while the control shrinks inside it.
+      <div className={cn('relative w-full', className)}>
+        <select ref={ref} className={cn(CONTROL, 'appearance-none py-2 pr-9')} {...props}>
+          {children}
+        </select>
+        <ChevronDown
+          size={16}
+          aria-hidden
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-tertiary"
+        />
+      </div>
     )
   },
 )

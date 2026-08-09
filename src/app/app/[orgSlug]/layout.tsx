@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell.tsx'
+import { OfflineRuntime } from '@/components/offline/OfflineRuntime.tsx'
 import { ThemeStyle } from '@/components/ThemeStyle.tsx'
 import { requireOrg } from '@/server/ctx.ts'
 import { pageCtx, requireCompletedProfile } from '@/server/page-ctx.ts'
@@ -44,6 +45,10 @@ export default async function OrgLayout({
       >
         {children}
       </AppShell>
+      {/* Mounted inside the organisation, not at the root: the queue only ever
+          holds conference writes, and the sign-in and public registration pages
+          have nothing to flush. */}
+      <OfflineRuntime />
     </>
   )
 }

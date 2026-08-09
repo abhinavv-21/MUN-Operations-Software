@@ -48,6 +48,23 @@ export function invalidateCommittees(
   void client.invalidateQueries({ queryKey: queryKeys.conferences(orgSlug) })
 }
 
+/**
+ * A conference-day write: a check-in, a logistics request, an award.
+ *
+ * All three invalidate the whole conference subtree, and all three also move the
+ * dashboard, which is the screen the numbers are read off. Being precise about
+ * which of the six keys each one touches would be an optimisation that has to
+ * be revisited every time a screen is added — and the day it is not revisited,
+ * the dashboard shows yesterday's attendance to a room full of people who are
+ * standing in front of it.
+ *
+ * The audit log is invalidated too, because every one of these writes a row and
+ * an audit viewer that does not show the action you just took reads as broken.
+ */
+export function invalidateConferenceDay(client: QueryClient, conferenceId: string): void {
+  void client.invalidateQueries({ queryKey: queryKeys.conf(conferenceId) })
+}
+
 /** A membership change moves the member list and the plan meter. */
 export function invalidateMembers(client: QueryClient, orgSlug: string): void {
   void client.invalidateQueries({ queryKey: queryKeys.members(orgSlug) })

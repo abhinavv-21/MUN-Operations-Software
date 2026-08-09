@@ -29,4 +29,14 @@ export const queryKeys = {
   /** Filtered lists carry their filters, so a search does not evict the base list. */
   delegates: (conferenceId: string, filters: Record<string, unknown> = {}) =>
     ['conf', conferenceId, 'delegates', filters] as const,
+
+  dashboard: (conferenceId: string) => ['conf', conferenceId, 'dashboard'] as const,
+  /** The register is per day, so switching day is a different query and not a refetch. */
+  attendance: (conferenceId: string, filters: Record<string, unknown> = {}) =>
+    ['conf', conferenceId, 'attendance', filters] as const,
+  logistics: (conferenceId: string, filters: Record<string, unknown> = {}) =>
+    ['conf', conferenceId, 'logistics', filters] as const,
+  awards: (conferenceId: string) => ['conf', conferenceId, 'awards'] as const,
+  auditLog: (conferenceId: string, filters: Record<string, unknown> = {}) =>
+    ['conf', conferenceId, 'audit', filters] as const,
 }

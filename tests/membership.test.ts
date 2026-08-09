@@ -223,6 +223,49 @@ describeWithDb('organisations, membership and invitations', () => {
     expect(membership.role).toBe('OWNER')
   })
 
+  /**
+   * The success path of removal, which had no test at all until Stage 7.
+   *
+   * The only DELETE test named the last-owner refusal — and that path returns
+   * before reaching the line that revokes conference grants, so the happy path
+   * answered 500 in production and every test stayed green. Found by the Stage
+   * 7 audit sweep, which calls every mutating admin route. See
+   * docs/07-TRAPS.md.
+   */
+  it('removes a member and takes their conference grants with them', async () => {
+    signedIn = ALICE
+    await createOrg('Alpha Model UN Society', 'zz-alpha')
+    const organization = await unsafeDb.organization.findUniqueOrThrow({
+      where: { slug: 'zz-alpha' },
+    })
+    const conference = await unsafeDb.conference.create({
+      data: { organizationId: organization.id, slug: 'mun-x', name: 'MUN X' },
+    })
+
+    const bob = await unsafeDb.user.create({
+      data: { authUserId: BOB.sub, email: BOB.email!, profileCompletedAt: new Date() },
+    })
+    await unsafeDb.membership.create({
+      data: { userId: bob.id, organizationId: organization.id, role: 'MEMBER' },
+    })
+    await unsafeDb.conferenceRole.create({
+      data: { userId: bob.id, conferenceId: conference.id, role: 'CONTRIBUTOR' },
+    })
+
+    const { DELETE } = await import('../src/app/api/orgs/[orgSlug]/members/[userId]/route.ts')
+    const response = await DELETE(
+      req(`/api/orgs/zz-alpha/members/${bob.id}`, { method: 'DELETE' }),
+      params({ orgSlug: 'zz-alpha', userId: bob.id }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(await unsafeDb.membership.count({ where: { userId: bob.id } })).toBe(0)
+    // Orphaned grants mean re-inviting somebody silently restores access they
+    // used to have.
+    expect(await unsafeDb.conferenceRole.count({ where: { userId: bob.id } })).toBe(0)
+    expect(await unsafeDb.auditLog.count({ where: { action: 'membership.remove' } })).toBe(1)
+  })
+
   it('refuses to remove the last owner', async () => {
     signedIn = ALICE
     await createOrg('Alpha Model UN Society', 'zz-alpha')

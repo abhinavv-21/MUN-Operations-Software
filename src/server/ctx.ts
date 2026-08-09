@@ -138,3 +138,26 @@ export function requireConference(ctx: Ctx): string {
   if (!ctx.conferenceId) throw ApiError.notFound('Not found')
   return ctx.conferenceId
 }
+
+/**
+ * Narrows to a conference the caller administers.
+ *
+ * **403 here, not 404**, and the difference from `requireConference` is
+ * deliberate. Reaching this point means `createCtx` already resolved a
+ * conference role, which it only does for a conference inside the caller's own
+ * organisation — so the resource is theirs and its existence is not a secret
+ * from them. What they lack is the rank to change it, and telling a
+ * CONTRIBUTOR that the awards screen is admin-only is useful. The 404-not-403
+ * rule is about hiding other tenants' data, not about hiding your own
+ * organisation's chain of command.
+ *
+ * Lives here rather than in each route handler so a Server Component gets the
+ * same answer as an HTTP caller — invariant 3.
+ */
+export function requireConferenceAdmin(ctx: Ctx): string {
+  const conferenceId = requireConference(ctx)
+  if (ctx.conferenceRole !== 'ADMIN') {
+    throw ApiError.forbidden('Only a conference admin can do that')
+  }
+  return conferenceId
+}

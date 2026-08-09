@@ -63,10 +63,17 @@ export function CapacityMeter({
   filled,
   total,
   label,
+  unit = 'seats',
 }: {
   filled: number
   total: number
   label?: string
+  /**
+   * What is being counted. Defaults to seats because that is what a committee
+   * meter counts — but the register counts delegates marked present, and
+   * "6 / 9 seats" on an attendance screen is a sentence about the wrong thing.
+   */
+  unit?: string
 }) {
   const ratio = total > 0 ? filled / total : 0
   const percent = Math.min(100, Math.round(ratio * 100))
@@ -80,7 +87,7 @@ export function CapacityMeter({
       <div className="flex items-baseline justify-between gap-2">
         {label ? <span className="text-body-sm text-ink-secondary">{label}</span> : null}
         <span className="font-mono text-data tabular-nums text-ink-secondary">
-          {filled} / {total} seats
+          {filled} / {total} {unit}
         </span>
       </div>
       <div
@@ -89,7 +96,7 @@ export function CapacityMeter({
         aria-valuenow={filled}
         aria-valuemin={0}
         aria-valuemax={total}
-        aria-label={label ? `${label} seat capacity` : 'Seat capacity'}
+        aria-label={label ? `${label}: ${filled} of ${total} ${unit}` : `${filled} of ${total} ${unit}`}
       >
         <div
           className={cn('h-full rounded-pill transition-all duration-standard ease-standard', tone)}
