@@ -53,6 +53,9 @@ export default async function ConferencePage({ params }: { params: Promise<Param
                 Registrations
               </Link>
             </Button>
+            <Button variant="secondary" asChild>
+              <Link href={`/app/${orgSlug}/conferences/${conferenceId}/delegates`}>Delegates</Link>
+            </Button>
           </>
         }
       />
