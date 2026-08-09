@@ -235,3 +235,56 @@ describeWithDb('the public registration endpoint', () => {
     expect(await unsafeDb.registration.count({ where: { conferenceId: second.id } })).toBe(1)
   })
 })
+
+describeWithDb('payment proof pinning', () => {
+  beforeEach(async () => {
+    await resetDatabase()
+    await unsafeDb.registration.deleteMany({})
+  })
+
+  afterAll(async () => {
+    await resetDatabase()
+  })
+
+  it('drops a payment proof URL that is not ours', async () => {
+    await seedOpenConference()
+
+    await submit({
+      ...APPLICANT,
+      // A URL an organiser would later click from the review queue. Storing it
+      // would make this form a phishing delivery mechanism.
+      paymentProofUrl: 'https://evil.example/mun-ops/payment-proofs/receipt.png',
+    })
+
+    const row = await unsafeDb.registration.findFirstOrThrow()
+    expect(row.paymentProofUrl).toBeNull()
+  })
+
+  it('drops a URL on our host but outside the prefix', async () => {
+    await seedOpenConference()
+    const endpoint = process.env.S3_ENDPOINT
+    const bucket = process.env.S3_BUCKET
+    if (!endpoint || !bucket) return
+
+    await submit({
+      ...APPLICANT,
+      paymentProofUrl: `${endpoint}/${bucket}/somewhere-else/receipt.png`,
+    })
+
+    const row = await unsafeDb.registration.findFirstOrThrow()
+    expect(row.paymentProofUrl).toBeNull()
+  })
+
+  it('keeps a URL that is genuinely ours', async () => {
+    await seedOpenConference()
+    const endpoint = process.env.S3_ENDPOINT
+    const bucket = process.env.S3_BUCKET
+    if (!endpoint || !bucket) return
+
+    const ours = `${endpoint}/${bucket}/payment-proofs/zz-conf/abc123.png`
+    await submit({ ...APPLICANT, paymentProofUrl: ours })
+
+    const row = await unsafeDb.registration.findFirstOrThrow()
+    expect(row.paymentProofUrl).toBe(ours)
+  })
+})

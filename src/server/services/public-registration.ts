@@ -4,6 +4,7 @@ import { scope, scopedCreate } from '../db.ts'
 import { ApiError } from '../errors.ts'
 import { runSerializable } from '../transaction.ts'
 import { findPublicConference } from '../scope-resolution.ts'
+import { isStorageUrl, storageEnabled } from '../storage.ts'
 import {
   generateReference,
   isHoneypotTripped,
@@ -127,6 +128,21 @@ export async function submitRegistration(
   input: PublicRegistrationInput,
   meta: SubmissionMeta,
 ): Promise<{ created: boolean; reference: string }> {
+  /*
+    The payment proof URL arrives from the browser, so it is pinned before it is
+    stored. Without this, an arbitrary URL could be put in `paymentProofUrl` and
+    later clicked by an organiser from the review queue — a phishing link
+    delivered through a form the product invites strangers to fill in.
+
+    Dropped rather than rejected: a bad URL here is far more likely to be a
+    stale presigned link than an attack, and failing the whole application over
+    a screenshot loses a real registration.
+  */
+  const paymentProofUrl =
+    input.paymentProofUrl && storageEnabled() && isStorageUrl(input.paymentProofUrl)
+      ? input.paymentProofUrl
+      : null
+
   const db = scope({ organizationId: conference.organizationId, conferenceId: conference.id })
 
   for (let attempt = 1; attempt <= MAX_REFERENCE_ATTEMPTS; attempt += 1) {
@@ -154,7 +170,7 @@ export async function submitRegistration(
             committeePreference2: input.committeePreference2,
             munsAttended: input.munsAttended,
             awardsWon: input.awardsWon,
-            paymentProofUrl: input.paymentProofUrl,
+            paymentProofUrl,
             dietaryNotes: input.dietaryNotes,
             accessibilityNotes: input.accessibilityNotes,
             submittedIp: meta.submittedIp,
