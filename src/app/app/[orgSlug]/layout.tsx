@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
+import { headers } from 'next/headers'
 import { AppShell } from '@/components/layout/AppShell.tsx'
 import { OfflineRuntime } from '@/components/offline/OfflineRuntime.tsx'
 import { ThemeStyle } from '@/components/ThemeStyle.tsx'
 import { requireOrg } from '@/server/ctx.ts'
+import { isOrgAdmin } from '@/server/auth/membership.ts'
 import { pageCtx, requireCompletedProfile } from '@/server/page-ctx.ts'
 import { getOrganizationThemeCss } from '@/server/services/theme.ts'
 
@@ -31,17 +33,22 @@ export default async function OrgLayout({
   requireCompletedProfile(ctx)
   const membership = requireOrg(ctx)
 
-  const themeCss = await getOrganizationThemeCss(membership.organizationId)
+  const [themeCss, nonce] = await Promise.all([
+    getOrganizationThemeCss(membership.organizationId),
+    headers().then((all) => all.get('x-nonce') ?? undefined),
+  ])
   const canManageMembers = membership.orgRole === 'OWNER' || membership.canManageMembers
+  const orgAdmin = isOrgAdmin(membership.orgRole)
 
   return (
     <>
-      <ThemeStyle css={themeCss} />
+      <ThemeStyle css={themeCss} nonce={nonce} />
       <AppShell
         orgSlug={orgSlug}
         organizationName={membership.organizationName}
         userEmail={ctx.user?.email ?? ''}
         canManageMembers={canManageMembers}
+        isOrgAdmin={orgAdmin}
       >
         {children}
       </AppShell>

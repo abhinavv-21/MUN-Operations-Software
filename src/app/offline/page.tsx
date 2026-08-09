@@ -28,7 +28,7 @@ export default function OfflinePage() {
           there are saved on this device and sent as soon as the connection comes back. Everything
           else will tell you it could not save rather than pretending it did.
         </p>
-        <p className="mt-6 text-body-sm text-ink-tertiary">
+        <p className="mt-6 text-body-sm text-ink-secondary">
           Reload once you are back on the network.
         </p>
       </div>

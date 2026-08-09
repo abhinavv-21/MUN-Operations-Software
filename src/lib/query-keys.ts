@@ -37,6 +37,12 @@ export const queryKeys = {
   logistics: (conferenceId: string, filters: Record<string, unknown> = {}) =>
     ['conf', conferenceId, 'logistics', filters] as const,
   awards: (conferenceId: string) => ['conf', conferenceId, 'awards'] as const,
-  auditLog: (conferenceId: string, filters: Record<string, unknown> = {}) =>
-    ['conf', conferenceId, 'audit', filters] as const,
+  /**
+   * Keyed by an opaque scope rather than a conference id, because the same
+   * viewer serves the conference log and the organisation log. Passing the
+   * conference id keeps it under that conference's subtree and so still gets
+   * invalidated by a conference-day write.
+   */
+  auditLog: (scope: string, filters: Record<string, unknown> = {}) =>
+    ['conf', scope, 'audit', filters] as const,
 }

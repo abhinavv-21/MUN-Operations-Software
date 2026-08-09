@@ -13,7 +13,12 @@
  * `themeSchema` rejects everything else, so what reaches this element is not
  * organiser-controlled markup — which is why storing arbitrary CSS was refused
  * in the first place.
+ *
+ * The `nonce` is what lets `style-src` refuse every *other* inline stylesheet.
+ * Without it the policy would need `'unsafe-inline'` for elements as well as
+ * attributes, and an injected `<style>` could then repaint the product's own
+ * controls — a login form is a thing worth restyling if you are phishing.
  */
-export function ThemeStyle({ css }: { css: string }) {
-  return <style dangerouslySetInnerHTML={{ __html: `:root{${css}}` }} />
+export function ThemeStyle({ css, nonce }: { css: string; nonce?: string }) {
+  return <style nonce={nonce} dangerouslySetInnerHTML={{ __html: `:root{${css}}` }} />
 }

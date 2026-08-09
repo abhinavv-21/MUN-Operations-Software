@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { PageHeader } from '@/components/ui/PageHeader.tsx'
 import { PermissionDenied } from '@/components/ui/States.tsx'
 import { pageCtx } from '@/server/page-ctx.ts'
-import { AuditClient } from './AuditClient.tsx'
+import { AuditClient } from '@/components/audit/AuditClient.tsx'
 
 export const metadata: Metadata = { title: 'Audit log' }
 
@@ -30,7 +30,10 @@ export default async function AuditPage({ params }: { params: Promise<Params> })
         title="Audit log"
         description="Every change made in this conference, who made it and what it looked like before."
       />
-      <AuditClient orgSlug={orgSlug} conferenceId={conferenceId} />
+      <AuditClient
+        endpoint={`/api/orgs/${orgSlug}/conferences/${conferenceId}/audit`}
+        queryScope={conferenceId}
+      />
     </>
   )
 }

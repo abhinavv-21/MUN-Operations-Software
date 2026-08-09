@@ -59,7 +59,23 @@ export async function getOrganizationTheme(organizationId: string): Promise<Them
  * leaves the old palette on screen reads as a save that did not work.
  */
 export function revalidateOrganizationTheme(organizationId: string): void {
-  revalidateTag(themeTag(organizationId), { expire: 0 })
+  /*
+    Guarded, because the write has already happened.
+
+    `revalidateTag` throws outside a request context — "static generation store
+    missing" — and there is more than one way to be outside one: a test calling
+    a route handler directly, and anything that ever runs this from a script or
+    a job. Letting that throw turns a branding save that **succeeded** into a
+    500, so the organiser sees an error, reloads, and finds their colours
+    changed anyway. Failing to drop a cache entry is worth a log line; it is not
+    worth failing the request over, and the 300-second floor on the cached
+    value picks it up regardless.
+  */
+  try {
+    revalidateTag(themeTag(organizationId), { expire: 0 })
+  } catch (error) {
+    console.warn('[theme] could not revalidate the theme cache', error)
+  }
 }
 
 /** The CSS declarations for an organisation, ready to go into a `<style>`. */

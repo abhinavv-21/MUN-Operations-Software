@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button.tsx'
 import { Card, CardHeader } from '@/components/ui/Card.tsx'
 import { DataTable, type Column } from '@/components/ui/DataTable.tsx'
 import { Field, Input, Textarea } from '@/components/ui/Field.tsx'
+import { SaveIndicator, type SaveState } from '@/components/ui/SaveIndicator.tsx'
 import { Modal } from '@/components/ui/Modal.tsx'
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/States.tsx'
 import { ApiError, apiFetch, errorMessage } from '@/lib/api.ts'
@@ -39,8 +40,13 @@ export function CommitteesClient({
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
 
+  const [seats, setSeats] = useState('')
+
   const [matrixFor, setMatrixFor] = useState<Committee | null>(null)
   const [countryText, setCountryText] = useState('')
+
+  /** Per-row save state for the inline seat editor, keyed by committee id. */
+  const [seatState, setSeatState] = useState<Record<string, SaveState>>({})
 
   const committees = useQuery({
     queryKey: queryKeys.committees(conferenceId),
@@ -50,14 +56,40 @@ export function CommitteesClient({
   })
 
   const create = useMutation({
-    mutationFn: (input: { code: string; name: string }) =>
+    mutationFn: (input: { code: string; name: string; seats: number | null }) =>
       apiFetch<{ committee: Committee }>(base, { method: 'POST', body: input }),
     onSuccess: () => {
       invalidateCommittees(client, orgSlug, conferenceId)
       setCreateOpen(false)
       setCode('')
       setName('')
+      setSeats('')
     },
+  })
+
+  /**
+   * Inline seat editing. `updateCommittee` has existed since Stage 4 with no
+   * control calling it, so a committee's capacity could only be set through the
+   * API — which meant seat limits, and the whole serializable allocation
+   * machinery behind them, were unreachable for anyone using the product.
+   *
+   * Saved on blur rather than on every keystroke: typing "15" over "5" passes
+   * through "1", and a request per character would briefly set the capacity
+   * below what is already allocated.
+   */
+  const updateSeats = useMutation({
+    mutationFn: (input: { committeeId: string; seats: number | null }) =>
+      apiFetch<{ committee: Committee }>(`${base}/${input.committeeId}`, {
+        method: 'PATCH',
+        body: { seats: input.seats },
+      }),
+    onMutate: (input) => setSeatState((current) => ({ ...current, [input.committeeId]: 'saving' })),
+    onSuccess: (_result, input) => {
+      setSeatState((current) => ({ ...current, [input.committeeId]: 'saved' }))
+      invalidateCommittees(client, orgSlug, conferenceId)
+    },
+    onError: (_error, input) =>
+      setSeatState((current) => ({ ...current, [input.committeeId]: 'error' })),
   })
 
   const remove = useMutation({
@@ -98,6 +130,36 @@ export function CommitteesClient({
     },
     { key: 'name', header: 'Committee', render: (committee) => committee.name },
     {
+      key: 'seats',
+      header: 'Seats',
+      render: (committee) =>
+        canEdit ? (
+          <div className="flex items-center gap-2">
+            <Input
+              aria-label={`Seats in ${committee.code}`}
+              defaultValue={committee.seats ?? ''}
+              inputMode="numeric"
+              placeholder="unlimited"
+              className="w-28"
+              onBlur={(event) => {
+                const raw = event.target.value.trim()
+                const next = raw === '' ? null : Number(raw)
+                if (next !== null && (!Number.isInteger(next) || next < 1)) return
+                if (next === committee.seats) return
+                updateSeats.mutate({ committeeId: committee.id, seats: next })
+              }}
+            />
+            <span aria-live="polite">
+              <SaveIndicator state={seatState[committee.id] ?? 'idle'} />
+            </span>
+          </div>
+        ) : committee.seats === null ? (
+          <span className="text-ink-secondary">unlimited</span>
+        ) : (
+          <span className="font-mono text-data tabular-nums">{committee.seats}</span>
+        ),
+    },
+    {
       key: 'countries',
       header: 'Countries',
       numeric: true,
@@ -106,7 +168,7 @@ export function CommitteesClient({
         committee.countryCount === 0 ? (
           // Zero rows is a supported state, not a missing one: the committee
           // accepts free-text countries until a matrix is set.
-          <span className="text-ink-tertiary">unconstrained</span>
+          <span className="text-ink-secondary">unconstrained</span>
         ) : (
           committee.countryCount
         ),
@@ -133,7 +195,7 @@ export function CommitteesClient({
     },
   ]
 
-  const mutationError = create.error ?? remove.error ?? setCountries.error
+  const mutationError = create.error ?? remove.error ?? setCountries.error ?? updateSeats.error
 
   return (
     <div className="flex flex-col gap-6">
@@ -209,7 +271,12 @@ export function CommitteesClient({
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault()
-            create.mutate({ code, name })
+            const parsed = seats.trim() === '' ? null : Number(seats.trim())
+            create.mutate({
+              code,
+              name,
+              seats: parsed !== null && Number.isInteger(parsed) && parsed > 0 ? parsed : null,
+            })
           }}
         >
           <Field label="Code" hint="Short, and how delegates will refer to it." required>
@@ -233,6 +300,22 @@ export function CommitteesClient({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="United Nations Security Council"
+              />
+            )}
+          </Field>
+
+          <Field
+            label="Seats"
+            hint="Leave blank for no limit. Capacity is enforced when a delegate is allocated, not here."
+          >
+            {({ id, describedBy }) => (
+              <Input
+                id={id}
+                inputMode="numeric"
+                value={seats}
+                aria-describedby={describedBy}
+                onChange={(event) => setSeats(event.target.value)}
+                placeholder="15"
               />
             )}
           </Field>

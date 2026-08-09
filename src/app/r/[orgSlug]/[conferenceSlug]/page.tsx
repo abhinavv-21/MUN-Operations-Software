@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { CalendarDays, MapPin } from 'lucide-react'
 import { ThemeStyle } from '@/components/ThemeStyle.tsx'
@@ -63,6 +64,12 @@ function formatFee(minorUnits: number | null, currency: string | null): string |
 export default async function PublicRegistrationPage({ params }: { params: Promise<Params> }) {
   const { orgSlug, conferenceSlug, conference } = await load(params)
 
+  // The third `<style>` in the product, and the one that was missed when the
+  // CSP nonce was threaded through the other two. Without it the browser
+  // refuses this block and the applicant sees the product's default palette
+  // instead of the organiser's — a page that looks fine and is wrong.
+  const nonce = (await headers()).get('x-nonce') ?? undefined
+
   // The conference's own theme wins; the organisation's is the inherited
   // default; the product's is the floor.
   const theme = parseTheme(conference.theme ?? conference.organization.defaultTheme)
@@ -74,7 +81,7 @@ export default async function PublicRegistrationPage({ params }: { params: Promi
 
   return (
     <>
-      <ThemeStyle css={themeCss} />
+      <ThemeStyle css={themeCss} nonce={nonce} />
       <main className="ground-app min-h-dvh px-4 py-10 md:px-8 md:py-16">
         <div className="mx-auto w-full max-w-2xl">
           <header>
@@ -101,7 +108,7 @@ export default async function PublicRegistrationPage({ params }: { params: Promi
               ) : null}
               {fee ? (
                 <div className="flex items-center gap-2">
-                  <dt className="text-body text-ink-tertiary">Delegate fee</dt>
+                  <dt className="text-body text-ink-secondary">Delegate fee</dt>
                   <dd className="text-body text-ink">{fee}</dd>
                 </div>
               ) : null}

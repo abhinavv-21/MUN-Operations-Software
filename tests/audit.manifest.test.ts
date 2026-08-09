@@ -198,6 +198,44 @@ const body = (method: string, url: string, payload?: unknown) =>
     ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
   })
 
+/**
+ * Every `METHOD src/app/api/...` the sweep actually invoked.
+ *
+ * Recorded by calling the handler rather than by reading the test source, which
+ * is what makes the closing check exact. The first version of this compared
+ * *file paths* found in the source, and it passed a `DELETE` added to a file
+ * whose `PATCH` was already swept — a whole destructive route proved by nothing.
+ * A set that only a real call can add to cannot make that mistake.
+ */
+const SWEPT = new Set<string>()
+
+type RouteHandler = (
+  request: Request,
+  context: { params: Promise<Record<string, string>> } | undefined,
+) => Promise<Response>
+
+/**
+ * Imports a route module and wraps every exported handler so that invoking it
+ * records the method and the file.
+ *
+ * Generic over the module type rather than returning a `Record`, so call sites
+ * keep the module's real shape — `route.PATCH` stays a known function instead of
+ * becoming a possibly-undefined index lookup.
+ */
+function track<T extends object>(file: string, module: T): T {
+  const wrapped: Record<string, RouteHandler> = {}
+
+  for (const [method, handler] of Object.entries(module)) {
+    if (typeof handler !== 'function') continue
+    wrapped[method] = (request, context) => {
+      SWEPT.add(`${method} ${file}`)
+      return (handler as RouteHandler)(request, context)
+    }
+  }
+
+  return wrapped as T
+}
+
 describeWithDb('every mutating admin route writes an AuditLog row', () => {
   const ORG = 'zz-manifest-org'
 
@@ -219,10 +257,16 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
 
     signedIn = ALICE
 
-    const orgs = await import('../src/app/api/orgs/route.ts')
+    const orgs = track(
+      'src/app/api/orgs/route.ts',
+      await import('../src/app/api/orgs/route.ts'),
+    )
     await orgs.POST(body('POST', '/api/orgs', { name: 'Manifest MUN Society', slug: ORG }), undefined)
 
-    const conferences = await import('../src/app/api/orgs/[orgSlug]/conferences/route.ts')
+    const conferences = track(
+      'src/app/api/orgs/[orgSlug]/conferences/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/route.ts'),
+    )
     const created = await conferences.POST(
       body('POST', `/api/orgs/${ORG}/conferences`, { name: 'Manifest MUN', slug: 'manifest-mun' }),
       params({ orgSlug: ORG }),
@@ -281,7 +325,10 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   }
 
   it('conference.update', async () => {
-    const route = await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/route.ts')
+    const route = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/route.ts'),
+    )
     await sweep('PATCH conference', () =>
       route.PATCH(
         body('PATCH', `/api/orgs/${ORG}/conferences/${conferenceId}`, { venue: 'The old hall' }),
@@ -291,8 +338,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('committee.create, committee.update and committee.set_countries', async () => {
-    const list = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/route.ts'
+    const list = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/route.ts'),
     )
     const created = await sweep(
       'POST committee',
@@ -309,8 +357,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
     )
     committeeId = (await created.json()).committee.id
 
-    const single = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/route.ts'
+    const single = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/route.ts'),
     )
     await sweep('PATCH committee', () =>
       single.PATCH(
@@ -321,8 +370,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
       ),
     )
 
-    const countries = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/countries/route.ts'
+    const countries = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/countries/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/countries/route.ts'),
     )
     await sweep('PUT countries', () =>
       countries.PUT(
@@ -337,8 +387,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('registration.import, registration.approve and registration.reject', async () => {
-    const importRoute = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/import/route.ts'
+    const importRoute = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/import/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/import/route.ts'),
     )
     await sweep('POST registrations/import', () =>
       importRoute.POST(
@@ -353,8 +404,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
     registrationId = registrations[0]!.id
     rejectedRegistrationId = registrations[1]!.id
 
-    const approve = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/[registrationId]/approve/route.ts'
+    const approve = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/[registrationId]/approve/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/[registrationId]/approve/route.ts'),
     )
     await sweep(
       'POST approve',
@@ -371,8 +423,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
 
     delegateId = (await unsafeDb.delegate.findFirstOrThrow({})).id
 
-    const reject = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/[registrationId]/reject/route.ts'
+    const reject = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/[registrationId]/reject/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/registrations/[registrationId]/reject/route.ts'),
     )
     await sweep('POST reject', () =>
       reject.POST(
@@ -387,8 +440,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('delegate.update', async () => {
-    const route = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/delegates/[delegateId]/route.ts'
+    const route = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/delegates/[delegateId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/delegates/[delegateId]/route.ts'),
     )
     await sweep('PATCH delegate', () =>
       route.PATCH(
@@ -401,8 +455,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('matrix.import', async () => {
-    const route = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/matrix/import/route.ts'
+    const route = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/matrix/import/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/matrix/import/route.ts'),
     )
     await sweep('POST matrix/import', () =>
       route.POST(
@@ -416,8 +471,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('assignment.create and assignment.remove', async () => {
-    const allocations = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/allocations/route.ts'
+    const allocations = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/allocations/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/allocations/route.ts'),
     )
     await sweep(
       'POST allocation',
@@ -433,8 +489,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
       201,
     )
 
-    const single = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/allocations/[delegateId]/route.ts'
+    const single = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/allocations/[delegateId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/allocations/[delegateId]/route.ts'),
     )
     await sweep('DELETE allocation', () =>
       single.DELETE(
@@ -455,8 +512,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('attendance.checkin', async () => {
-    const route = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/attendance/route.ts'
+    const route = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/attendance/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/attendance/route.ts'),
     )
     await sweep('POST attendance', () =>
       route.POST(
@@ -471,8 +529,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('logistics.create and logistics.update', async () => {
-    const list = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/logistics/route.ts'
+    const list = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/logistics/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/logistics/route.ts'),
     )
     const created = await sweep(
       'POST logistics',
@@ -490,8 +549,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
     )
     logisticsId = (await created.json()).request.id
 
-    const single = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/logistics/[requestId]/route.ts'
+    const single = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/logistics/[requestId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/logistics/[requestId]/route.ts'),
     )
     await sweep('PATCH logistics', () =>
       single.PATCH(
@@ -505,8 +565,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('award.create and award.remove', async () => {
-    const list = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/awards/route.ts'
+    const list = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/awards/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/awards/route.ts'),
     )
     const created = await sweep(
       'POST award',
@@ -523,8 +584,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
     )
     awardId = (await created.json()).award.id
 
-    const single = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/awards/[awardId]/route.ts'
+    const single = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/awards/[awardId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/awards/[awardId]/route.ts'),
     )
     await sweep('DELETE award', () =>
       single.DELETE(
@@ -535,8 +597,9 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('integration.issue_secret', async () => {
-    const route = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/integrations/google-sheets/route.ts'
+    const route = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/integrations/google-sheets/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/integrations/google-sheets/route.ts'),
     )
     await sweep(
       'POST google-sheets',
@@ -553,7 +616,10 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('invitation.create and invitation.revoke', async () => {
-    const list = await import('../src/app/api/orgs/[orgSlug]/invitations/route.ts')
+    const list = track(
+      'src/app/api/orgs/[orgSlug]/invitations/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/invitations/route.ts'),
+    )
     const created = await sweep(
       'POST invitation',
       () =>
@@ -565,7 +631,10 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
     )
     invitationId = (await created.json()).invitation.id
 
-    const single = await import('../src/app/api/orgs/[orgSlug]/invitations/[invitationId]/route.ts')
+    const single = track(
+      'src/app/api/orgs/[orgSlug]/invitations/[invitationId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/invitations/[invitationId]/route.ts'),
+    )
     await sweep('DELETE invitation', () =>
       single.DELETE(
         body('DELETE', `/api/orgs/${ORG}/invitations/${invitationId}`),
@@ -575,7 +644,10 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
   })
 
   it('membership.update, organization.transfer_ownership and membership.remove', async () => {
-    const member = await import('../src/app/api/orgs/[orgSlug]/members/[userId]/route.ts')
+    const member = track(
+      'src/app/api/orgs/[orgSlug]/members/[userId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/members/[userId]/route.ts'),
+    )
     await sweep('PATCH member', () =>
       member.PATCH(
         body('PATCH', `/api/orgs/${ORG}/members/${secondUserId}`, { role: 'ADMIN' }),
@@ -583,7 +655,10 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
       ),
     )
 
-    const transfer = await import('../src/app/api/orgs/[orgSlug]/transfer-ownership/route.ts')
+    const transfer = track(
+      'src/app/api/orgs/[orgSlug]/transfer-ownership/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/transfer-ownership/route.ts'),
+    )
     await sweep('POST transfer-ownership', () =>
       transfer.POST(
         body('POST', `/api/orgs/${ORG}/transfer-ownership`, { userId: secondUserId }),
@@ -622,11 +697,45 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
     )
   })
 
+  it('organization.update and organization.branding', async () => {
+    const settings = track(
+      'src/app/api/orgs/[orgSlug]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/route.ts'),
+    )
+    await sweep('PATCH organisation', () =>
+      settings.PATCH(
+        body('PATCH', `/api/orgs/${ORG}`, { name: 'Manifest MUN Society (renamed)' }),
+        params({ orgSlug: ORG }),
+      ),
+    )
+
+    const branding = track(
+      'src/app/api/orgs/[orgSlug]/branding/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/branding/route.ts'),
+    )
+    await sweep('PUT branding', () =>
+      branding.PUT(
+        // The preset's own seeds, unchanged. A customised palette is the
+        // `customBranding` flag, which this organisation is on the free plan
+        // for — that refusal has its own test in organizations.test.ts.
+        body('PUT', `/api/orgs/${ORG}/branding`, {
+          preset: 'navy',
+          seed: { primary: '#1d4ed8', ink: '#0b1220', paper: '#f8fafc', accent: '#c2872b' },
+          radius: 'soft',
+          font: 'grotesk',
+          logoUrl: null,
+        }),
+        params({ orgSlug: ORG }),
+      ),
+    )
+  })
+
   it('committee.delete', async () => {
     // Last, because deleting the committee cascades the allocation and the
     // award that the earlier sweeps depend on.
-    const route = await import(
-      '../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/route.ts'
+    const route = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/committees/[committeeId]/route.ts'),
     )
     await sweep('DELETE committee', () =>
       route.DELETE(
@@ -645,24 +754,77 @@ describeWithDb('every mutating admin route writes an AuditLog row', () => {
    * than asserting it in a comment: if a route is added and not swept, this
    * fails and names it.
    */
-  it('leaves no mutating admin route unexercised', () => {
-    const swept = readFileSync(join(import.meta.dirname, 'audit.manifest.test.ts'), 'utf8')
+  it('conference.delete', async () => {
+    /*
+      Last, and by some distance the most destructive: this cascades the
+      committees, delegates, allocations, attendance, logistics and awards every
+      test above created. It runs here because nothing after it needs the
+      conference — and the audit rows it leaves behind are the point of
+      `AuditLog.conferenceId` being SetNull rather than Cascade.
+    */
+    const before = await unsafeDb.auditLog.count()
 
-    const unexercised = [
-      ...new Set(
-        routeFiles(API_ROOT)
-          .flatMap(parseRoute)
-          .filter((route) => route.hasOrgParam)
-          .map((route) => route.file)
-          .filter((file) => !swept.includes(file.replace('src/app/api/', ''))),
+    const route = track(
+      'src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/route.ts',
+      await import('../src/app/api/orgs/[orgSlug]/conferences/[conferenceId]/route.ts'),
+    )
+
+    const refused = await route.DELETE(
+      body('DELETE', `/api/orgs/${ORG}/conferences/${conferenceId}`, { confirm: 'not the name' }),
+      params({ orgSlug: ORG, conferenceId }),
+    )
+    expect(refused.status, 'a wrong confirmation must not delete anything').toBe(422)
+    expect(await unsafeDb.conference.count()).toBe(1)
+
+    await sweep('DELETE conference', () =>
+      route.DELETE(
+        body('DELETE', `/api/orgs/${ORG}/conferences/${conferenceId}`, {
+          confirm: 'Manifest MUN',
+        }),
+        params({ orgSlug: ORG, conferenceId }),
       ),
-    ]
+    )
+
+    expect(await unsafeDb.conference.count()).toBe(0)
+
+    // The trail survived the thing it describes.
+    const after = await unsafeDb.auditLog.count()
+    expect(after).toBeGreaterThan(before)
+    expect(
+      await unsafeDb.auditLog.count({ where: { action: 'conference.delete' } }),
+      'the record of the deletion outlives the conference',
+    ).toBe(1)
+  })
+
+  it('leaves no mutating admin route unexercised', () => {
+    const manifest = routeFiles(API_ROOT)
+      .flatMap(parseRoute)
+      .filter((route) => route.hasOrgParam)
+      .map((route) => `${route.method} ${route.file}`)
+
+    const unexercised = manifest.filter((entry) => !SWEPT.has(entry)).sort()
 
     expect(
       unexercised,
-      'These mutating admin routes are never called by this sweep, so nothing proves they ' +
+      'These mutating admin routes were never called by this sweep, so nothing proves they ' +
         'write the audit row they declare: ' +
         unexercised.join(', '),
     ).toEqual([])
+
+    /*
+      And nothing claims coverage it does not have: every recorded call
+      corresponds to a route that still exists.
+
+      Compared against **every** mutating route rather than the admin subset,
+      because the fixture legitimately calls a few that are not admin routes —
+      creating the organisation in the first place, for one — and those are
+      exempt from needing an audit action, not from existing.
+    */
+    const everyMutatingRoute = routeFiles(API_ROOT)
+      .flatMap(parseRoute)
+      .map((route) => `${route.method} ${route.file}`)
+
+    const stale = [...SWEPT].filter((entry) => !everyMutatingRoute.includes(entry)).sort()
+    expect(stale, `Swept but no longer a mutating route: ${stale.join(', ')}`).toEqual([])
   })
 })

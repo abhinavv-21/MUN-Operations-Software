@@ -143,7 +143,7 @@ export function AttendanceClient({
       key: 'school',
       header: 'School',
       secondary: true,
-      render: (row) => row.schoolName ?? <span className="text-ink-tertiary">—</span>,
+      render: (row) => row.schoolName ?? <span className="text-ink-secondary">—</span>,
     },
     {
       key: 'status',
@@ -161,12 +161,12 @@ export function AttendanceClient({
       render: (row) => {
         const pending = queued[row.id]
         const status = pending ?? row.attendance?.status
-        if (!status) return <span className="text-body-sm text-ink-tertiary">Not marked</span>
+        if (!status) return <span className="text-body-sm text-ink-secondary">Not marked</span>
         return (
           <div className="flex items-center gap-2">
             <Badge tone={STATUS_TONE[status]}>{status.toLowerCase()}</Badge>
             {pending ? (
-              <span className="text-body-sm text-ink-tertiary">waiting to send</span>
+              <span className="text-body-sm text-ink-secondary">waiting to send</span>
             ) : null}
           </div>
         )

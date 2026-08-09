@@ -199,7 +199,7 @@ export function LogisticsClient({
       secondary: true,
       render: (row) =>
         row.requestedBy?.fullName ?? row.requestedBy?.email ?? (
-          <span className="text-ink-tertiary">—</span>
+          <span className="text-ink-secondary">—</span>
         ),
     },
     {

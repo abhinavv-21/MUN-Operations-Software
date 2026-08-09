@@ -204,7 +204,7 @@ export function SignInForm({ next, initialError }: { next?: string; initialError
 
           <div className="flex items-center gap-3" aria-hidden>
             <span className="h-px flex-1 bg-edge" />
-            <span className="text-label uppercase text-ink-tertiary">or</span>
+            <span className="text-label uppercase text-ink-secondary">or</span>
             <span className="h-px flex-1 bg-edge" />
           </div>
 

@@ -5,7 +5,11 @@ import { scope, scopedCreate } from '../db.ts'
 import { ApiError } from '../errors.ts'
 import { uuidv7 } from '../ids.ts'
 import { listMembershipsForUser } from '../scope-resolution.ts'
-import { requireUser, type Ctx } from '../ctx.ts'
+import { requireOrg, requireUser, type Ctx } from '../ctx.ts'
+import { isOrgAdmin } from '../auth/membership.ts'
+import { assertFeature, computeUsage, type Usage } from '../limits.ts'
+import { parseTheme, PRESET_SEEDS, type Theme } from '@/lib/theme/schema.ts'
+import { revalidateOrganizationTheme } from './theme.ts'
 
 /**
  * Slugs are the organisation's public address, in `/app/<slug>` and
@@ -160,4 +164,146 @@ export function suggestSlug(name: string): string {
 
 export function assertSlugAvailable(taken: boolean): void {
   if (taken) throw ApiError.conflict('That address is already taken')
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Settings                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export const updateOrganizationSchema = z.object({
+  name: z.string().trim().min(2, 'Give the organisation a name').max(120).optional(),
+  slug: slugSchema.optional(),
+})
+
+export type UpdateOrganizationInput = z.infer<typeof updateOrganizationSchema>
+
+/** Settings are an owner-or-admin power, like creating a conference. */
+function requireOrganizationAdmin(ctx: Ctx) {
+  const membership = requireOrg(ctx)
+  if (!isOrgAdmin(membership.orgRole)) {
+    throw ApiError.forbidden('Only an organisation owner or admin can do that')
+  }
+  return membership
+}
+
+export interface OrganizationSettings {
+  id: string
+  slug: string
+  name: string
+  planKey: string
+  theme: Theme
+  usage: Usage
+}
+
+export async function getOrganizationSettings(ctx: Ctx): Promise<OrganizationSettings> {
+  const membership = requireOrganizationAdmin(ctx)
+
+  const organization = await ctx.db.organization.findUniqueOrThrow({
+    where: { id: membership.organizationId },
+    select: { id: true, slug: true, name: true, planKey: true, planLimits: true, defaultTheme: true },
+  })
+
+  return {
+    id: organization.id,
+    slug: organization.slug,
+    name: organization.name,
+    planKey: organization.planKey,
+    theme: parseTheme(organization.defaultTheme),
+    usage: await computeUsage(ctx.db, organization),
+  }
+}
+
+/**
+ * Renames an organisation, and optionally moves its address.
+ *
+ * **Changing the slug moves every public registration URL**, and those are
+ * printed on posters and pasted into school newsletters. It is allowed anyway,
+ * because the alternative is that a typo made during sign-up is permanent, and
+ * an organisation that cannot fix its own address emails you — which is the one
+ * thing this stage exists to stop. The form says plainly which links break, and
+ * the audit row records both values so the old address can be recovered from the
+ * log rather than from memory.
+ */
+export async function updateOrganization(ctx: Ctx, input: UpdateOrganizationInput) {
+  const membership = requireOrganizationAdmin(ctx)
+
+  const before = await ctx.db.organization.findUniqueOrThrow({
+    where: { id: membership.organizationId },
+    select: { id: true, slug: true, name: true },
+  })
+
+  if (input.slug && input.slug !== before.slug) {
+    // Checked here for the readable 409; the unique index is what guarantees it.
+    const taken = await scope({}).organization.findUnique({
+      where: { slug: input.slug },
+      select: { id: true },
+    })
+    assertSlugAvailable(taken !== null)
+  }
+
+  const updated = await ctx.db.organization.update({
+    where: { id: before.id },
+    data: {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.slug !== undefined ? { slug: input.slug } : {}),
+    },
+    select: { id: true, slug: true, name: true },
+  })
+
+  await ctx.audit.record({
+    action: 'organization.update',
+    entityType: 'Organization',
+    entityId: updated.id,
+    payloadBefore: { slug: before.slug, name: before.name },
+    payloadAfter: { slug: updated.slug, name: updated.name },
+  })
+
+  return updated
+}
+
+/**
+ * Saves the organisation's branding.
+ *
+ * Only the seeds, the preset, the radius and the font — never CSS. Everything
+ * else is derived and contrast-checked by `buildThemeVars`, which is what makes
+ * it impossible for an organiser to choose a palette that strands their own
+ * text at 1.02:1.
+ *
+ * Presets are available on every plan; **custom seed colours are the
+ * `customBranding` flag**, which had sat in the plan table since Stage 1 with
+ * nothing reading it. Choosing a preset and leaving its colours alone is not a
+ * custom brand, so the free plan is not blocked from picking navy.
+ */
+export async function updateOrganizationBranding(ctx: Ctx, theme: Theme) {
+  const membership = requireOrganizationAdmin(ctx)
+
+  const organization = await ctx.db.organization.findUniqueOrThrow({
+    where: { id: membership.organizationId },
+    select: { planKey: true, planLimits: true, defaultTheme: true },
+  })
+
+  const presetSeed = PRESET_SEEDS[theme.preset]
+  const customised = (Object.keys(presetSeed) as (keyof typeof presetSeed)[]).some(
+    (key) => theme.seed[key] !== presetSeed[key],
+  )
+  if (customised) assertFeature(organization, 'customBranding')
+
+  await ctx.db.organization.update({
+    where: { id: membership.organizationId },
+    data: { defaultTheme: theme as unknown as Prisma.InputJsonValue },
+  })
+
+  await ctx.audit.record({
+    action: 'organization.branding',
+    entityType: 'Organization',
+    entityId: membership.organizationId,
+    payloadBefore: parseTheme(organization.defaultTheme),
+    payloadAfter: theme,
+  })
+
+  // Or the palette on screen stays the old one and the save reads as a failure.
+  revalidateOrganizationTheme(membership.organizationId)
+
+  return theme
 }

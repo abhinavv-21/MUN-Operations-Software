@@ -7,6 +7,7 @@ import {
   Inbox,
   LayoutGrid,
   ScrollText,
+  SlidersHorizontal,
   Users,
   Wrench,
 } from 'lucide-react'
@@ -105,6 +106,15 @@ export const CONFERENCE_NAV = [
     icon: ScrollText as LucideIcon,
     href: (orgSlug: string, conferenceId: string) =>
       `/app/${orgSlug}/conferences/${conferenceId}/audit` as const,
+    adminOnly: true,
+    exact: false,
+  },
+  {
+    key: 'settings',
+    label: 'Settings',
+    icon: SlidersHorizontal as LucideIcon,
+    href: (orgSlug: string, conferenceId: string) =>
+      `/app/${orgSlug}/conferences/${conferenceId}/settings` as const,
     adminOnly: true,
     exact: false,
   },

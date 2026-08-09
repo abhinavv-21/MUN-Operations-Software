@@ -20,16 +20,18 @@ export function AppShell({
   organizationName,
   userEmail,
   canManageMembers,
+  isOrgAdmin,
   children,
 }: {
   orgSlug: string
   organizationName: string
   userEmail: string
   canManageMembers: boolean
+  isOrgAdmin: boolean
   children: ReactNode
 }) {
   const pathname = usePathname()
-  const items = visibleNav(canManageMembers)
+  const items = visibleNav(canManageMembers, isOrgAdmin)
 
   const isCurrent = (href: string) =>
     href === `/app/${orgSlug}` ? pathname === href : pathname.startsWith(href)
@@ -73,7 +75,7 @@ export function AppShell({
         </nav>
 
         <div className="border-t border-edge p-3">
-          <p className="truncate px-3 pb-2 text-body-sm text-ink-tertiary">{userEmail}</p>
+          <p className="truncate px-3 pb-2 text-body-sm text-ink-secondary">{userEmail}</p>
           <form action="/auth/sign-out" method="post">
             <button
               type="submit"

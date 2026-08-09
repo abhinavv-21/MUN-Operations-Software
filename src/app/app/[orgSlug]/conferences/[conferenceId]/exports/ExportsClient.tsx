@@ -90,7 +90,7 @@ export function ExportsClient({
         </Card>
       ))}
 
-      <p className="text-body-sm text-ink-tertiary">
+      <p className="text-body-sm text-ink-secondary">
         Every download is recorded in the audit log with who took it and when. These files hold
         students&rsquo; names, emails and phone numbers.
       </p>

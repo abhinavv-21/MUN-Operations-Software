@@ -159,7 +159,7 @@ export function DelegatesClient({
       key: 'school',
       header: 'School',
       secondary: true,
-      render: (row) => row.schoolName ?? <span className="text-ink-tertiary">—</span>,
+      render: (row) => row.schoolName ?? <span className="text-ink-secondary">—</span>,
     },
     {
       key: 'allocation',
@@ -266,7 +266,7 @@ export function DelegatesClient({
                     </span>
                   </div>
                 )}
-                <p className="mt-1 text-body-sm text-ink-tertiary">
+                <p className="mt-1 text-body-sm text-ink-secondary">
                   {committee.matrixSize === 0
                     ? 'No matrix — any country'
                     : `${committee.matrixSize} countries in the matrix`}

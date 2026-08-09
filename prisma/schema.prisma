@@ -321,6 +321,14 @@ model Invitation {
 /// belong to, so `conferenceId` is nullable and `organizationId` is not. It is
 /// classified as an organisation-scoped model, and the single write path in
 /// src/server/audit.ts is what keeps the pair consistent.
+///
+/// **`conferenceId` is `SetNull`, not `Cascade`.** The trail has to outlive the
+/// thing it describes. Deleting a conference under `Cascade` took every row
+/// recording what had been done to it — including the row recording the
+/// deletion — which makes "the audit log is the answer to *I deleted it by
+/// mistake*" untrue at precisely the moment it is needed. The rows survive
+/// attached to the organisation, and the organisation audit view is where they
+/// are read.
 model AuditLog {
   id             String  @id @default(uuid(7))
   organizationId String
@@ -342,7 +350,7 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  conference   Conference?  @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  conference   Conference?  @relation(fields: [conferenceId], references: [id], onDelete: SetNull)
   actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, createdAt])

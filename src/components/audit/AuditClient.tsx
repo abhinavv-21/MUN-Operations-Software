@@ -78,28 +78,40 @@ function formatWhen(iso: string): string {
  * four hundred lines of JSON between every entry, and the entry list is what
  * people are scanning.
  */
-export function AuditClient({ orgSlug, conferenceId }: { orgSlug: string; conferenceId: string }) {
-  const base = `/api/orgs/${orgSlug}/conferences/${conferenceId}`
+export function AuditClient({
+  endpoint,
+  queryScope,
+  showScopeFilter = false,
+}: {
+  /** The API path to read from. The two views differ only in this. */
+  endpoint: string
+  /** Namespaces the React Query cache, so the two views cannot share a page. */
+  queryScope: string
+  /** Organisation view only: "everything" versus "outside a conference". */
+  showScopeFilter?: boolean
+}) {
 
   const [action, setAction] = useState('')
   const [actorUserId, setActorUserId] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [scope, setScope] = useState<'all' | 'organization'>('all')
   const [cursors, setCursors] = useState<string[]>([])
 
   const cursor = cursors.at(-1)
-  const filters = { action, actorUserId, from, to, cursor }
+  const filters = { action, actorUserId, from, to, scope, cursor }
 
   const data = useQuery({
-    queryKey: queryKeys.auditLog(conferenceId, filters),
+    queryKey: queryKeys.auditLog(queryScope, filters),
     queryFn: () => {
       const query = new URLSearchParams()
       if (action) query.set('action', action)
       if (actorUserId) query.set('actorUserId', actorUserId)
       if (from) query.set('from', from)
       if (to) query.set('to', to)
+      if (scope !== 'all') query.set('scope', scope)
       if (cursor) query.set('cursor', cursor)
-      return apiFetch<Page>(`${base}/audit?${query}`)
+      return apiFetch<Page>(`${endpoint}?${query}`)
     },
     placeholderData: (previous) => previous,
   })
@@ -119,9 +131,31 @@ export function AuditClient({ orgSlug, conferenceId }: { orgSlug: string; confer
       <Card>
         <CardHeader
           title="Filters"
-          description="Everything written for this conference, newest first."
+          description={
+            showScopeFilter
+              ? 'Everything written in this organisation, newest first — including conferences that have since been deleted.'
+              : 'Everything written for this conference, newest first.'
+          }
         />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {showScopeFilter ? (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="audit-scope" className="text-label uppercase text-ink-secondary">
+                Where
+              </label>
+              <Select
+                id="audit-scope"
+                value={scope}
+                onChange={(event) =>
+                  changeFilter(() => setScope(event.target.value as 'all' | 'organization'))
+                }
+              >
+                <option value="all">Everything in this organisation</option>
+                <option value="organization">Outside a conference</option>
+              </Select>
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-1.5">
             <label htmlFor="audit-action" className="text-label uppercase text-ink-secondary">
               Action
@@ -201,7 +235,7 @@ export function AuditClient({ orgSlug, conferenceId }: { orgSlug: string; confer
               <li key={entry.id} className="p-4 md:p-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-body text-ink">{describeAction(entry.action)}</p>
-                  <p className="font-mono text-data tabular-nums text-ink-tertiary">
+                  <p className="font-mono text-data tabular-nums text-ink-secondary">
                     {formatWhen(entry.createdAt)}
                   </p>
                 </div>

@@ -121,11 +121,53 @@ const LIMIT_MESSAGES: Record<NumericLimit, (max: number) => string> = {
   maxStorageMb: (max) => `Your plan includes ${max} MB of uploads. Ask us to raise the limit.`,
 }
 
+/** The plan flags that are booleans rather than ceilings. */
+export type FeatureFlag = {
+  [K in keyof Plan]: Plan[K] extends boolean ? K : never
+}[keyof Plan]
+
+const FEATURE_MESSAGES: Record<FeatureFlag, string> = {
+  customBranding:
+    'Custom brand colours are part of the Pro plan. The presets are available on every plan — ' +
+    'email us and we will turn this on for you.',
+}
+
+/**
+ * The same funnel as `assertWithinLimit`, for the flags that are on or off.
+ *
+ * `customBranding` has sat in the plan table since Stage 1 with nothing reading
+ * it, which makes it a claim the product does not keep. This is what makes it
+ * true — and, like every other limit here, it is lifted by a row update rather
+ * than by a deploy, because `planLimits` **is** the upgrade flow.
+ *
+ * **403, not 402**, for the same reason: there is nothing the caller can pay.
+ * The UI keys on `details.limit`.
+ */
+export function assertFeature(
+  organization: { planKey: string; planLimits?: unknown },
+  feature: FeatureFlag,
+): void {
+  const limits = effectiveLimits(organization)
+  if (limits[feature] === true) return
+
+  const details: LimitDetails = {
+    limit: feature,
+    current: 0,
+    max: 0,
+    planKey: organization.planKey,
+  }
+
+  throw ApiError.forbidden(FEATURE_MESSAGES[feature], details)
+}
+
 export interface Usage {
   planKey: string
   planLabel: string
   conferences: { current: number; max: number }
   members: { current: number; max: number }
+  delegatesPerConference: { max: number }
+  committeesPerConference: { max: number }
+  customBranding: boolean
 }
 
 /**
@@ -146,5 +188,11 @@ export async function computeUsage(
     planLabel: planFor(organization.planKey).label,
     conferences: { current: conferences, max: limits.maxConferences },
     members: { current: members, max: limits.maxMembers },
+    // Per-conference ceilings have no single "current" to show at organisation
+    // level. Reported as the ceiling alone rather than invented as a total,
+    // which would be a number that means nothing to anybody.
+    delegatesPerConference: { max: limits.maxDelegatesPerConference },
+    committeesPerConference: { max: limits.maxCommitteesPerConference },
+    customBranding: limits.customBranding === true,
   }
 }

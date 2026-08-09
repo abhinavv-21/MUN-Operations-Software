@@ -126,7 +126,7 @@ export function RegistrationsClient({
       key: 'school',
       header: 'School',
       secondary: true,
-      render: (row) => row.schoolName ?? <span className="text-ink-tertiary">—</span>,
+      render: (row) => row.schoolName ?? <span className="text-ink-secondary">—</span>,
     },
     {
       key: 'preference',
@@ -137,7 +137,7 @@ export function RegistrationsClient({
           // Shown, never acted on. Allocation happens on its own screen.
           <span className="text-ink-secondary">{row.committeePreference}</span>
         ) : (
-          <span className="text-ink-tertiary">—</span>
+          <span className="text-ink-secondary">—</span>
         ),
     },
     {
@@ -147,7 +147,7 @@ export function RegistrationsClient({
         <div className="flex flex-col gap-1">
           <Badge tone={STATUS_TONE[row.status]}>{row.status.toLowerCase()}</Badge>
           {row.rejectionReason ? (
-            <span className="text-body-sm text-ink-tertiary">{row.rejectionReason}</span>
+            <span className="text-body-sm text-ink-secondary">{row.rejectionReason}</span>
           ) : null}
         </div>
       ),

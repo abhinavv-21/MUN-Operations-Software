@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { CalendarDays, LayoutDashboard, Users } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, Settings, Users } from 'lucide-react'
 
 /**
  * Navigation as data, in one file.
@@ -15,8 +15,8 @@ import { CalendarDays, LayoutDashboard, Users } from 'lucide-react'
  *
  * Only routes that exist appear here. Typed routes make a link to a page that
  * has not been built a compile error rather than something a person has to
- * notice — which is how Conferences and Settings came out in Stage 3, and how
- * Conferences came back in now that it exists. Settings arrives in Stage 8.
+ * notice — which is how Conferences and Settings came out in Stage 3, how
+ * Conferences came back in Stage 4, and how Settings came back in Stage 8.
  */
 export const ORG_NAV = [
   {
@@ -40,12 +40,27 @@ export const ORG_NAV = [
     href: (orgSlug: string) => `/app/${orgSlug}/members` as const,
     requiresMemberManager: true,
   },
+  {
+    key: 'settings',
+    label: 'Settings',
+    icon: Settings as LucideIcon,
+    href: (orgSlug: string) => `/app/${orgSlug}/settings` as const,
+    // Owner or admin, which is a different power from managing members —
+    // `canManageMembers` is deliberately off the role axis. Rendered from the
+    // role rather than that flag.
+    requiresMemberManager: false,
+    requiresOrgAdmin: true,
+  },
 ]
 
 export type NavItem = (typeof ORG_NAV)[number]
 
-export function visibleNav(canManageMembers: boolean): NavItem[] {
+export function visibleNav(canManageMembers: boolean, isOrgAdmin = false): NavItem[] {
   // Omitted, not disabled. A control someone cannot use is noise, and a
   // disabled one is a promise the product cannot keep.
-  return ORG_NAV.filter((item) => !item.requiresMemberManager || canManageMembers)
+  return ORG_NAV.filter(
+    (item) =>
+      (!item.requiresMemberManager || canManageMembers) &&
+      (!('requiresOrgAdmin' in item && item.requiresOrgAdmin) || isOrgAdmin),
+  )
 }

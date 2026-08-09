@@ -197,3 +197,79 @@ export async function updateConference(
 
   return updated
 }
+
+
+export const deleteConferenceSchema = z.object({
+  /** The conference's own name, typed back by the person deleting it. */
+  confirm: z.string().trim().min(1, 'Type the conference name to confirm'),
+})
+
+export type DeleteConferenceInput = z.infer<typeof deleteConferenceSchema>
+
+/**
+ * Deletes a conference and everything hanging off it.
+ *
+ * **The typed confirmation is checked here, not only in the dialog.** A
+ * confirmation that lives in the UI is a confirmation that a `curl` skips, and
+ * this is the single most destructive call in the product: committees,
+ * delegates, allocations, the country matrix, attendance, logistics, awards and
+ * every registration go with it, by cascade.
+ *
+ * What does **not** go with it is the audit trail. `AuditLog.conferenceId` is
+ * `SetNull`, so the record of what was done — including this deletion — survives
+ * on the organisation and is readable in organisation settings. Under the
+ * `Cascade` it had until Stage 8, deleting a conference erased the evidence of
+ * its own deletion, which made "the audit log is the answer to *I deleted it by
+ * mistake*" false exactly when it was needed.
+ *
+ * The audit row is written **before** the delete and through the same
+ * transaction, because a row written afterwards describes something that may
+ * have rolled back, and one written outside describes something that may not
+ * have happened at all.
+ */
+export async function deleteConference(
+  ctx: Ctx,
+  conferenceId: string,
+  input: DeleteConferenceInput,
+): Promise<{ deleted: true; name: string }> {
+  requireConferenceAdmin(ctx)
+
+  const conference = await getConference(ctx, conferenceId)
+
+  if (input.confirm !== conference.name) {
+    throw ApiError.unprocessable('Validation failed', [
+      { path: 'confirm', message: `Type "${conference.name}" exactly to confirm` },
+    ])
+  }
+
+  // Counted for the audit row. What was destroyed is the part of a deletion
+  // worth being able to read back a year later.
+  const [committees, delegates, registrations] = await Promise.all([
+    ctx.db.committee.count({ where: { conferenceId: conference.id } }),
+    ctx.db.delegate.count({ where: { conferenceId: conference.id } }),
+    ctx.db.registration.count({ where: { conferenceId: conference.id } }),
+  ])
+
+  await ctx.db.$transaction(async (tx) => {
+    await ctx.audit.record(
+      {
+        action: 'conference.delete',
+        entityType: 'Conference',
+        entityId: conference.id,
+        payloadBefore: {
+          slug: conference.slug,
+          name: conference.name,
+          status: conference.status,
+          committees,
+          delegates,
+          registrations,
+        },
+      },
+      tx as unknown as typeof ctx.db,
+    )
+
+    await (tx as unknown as typeof ctx.db).conference.delete({ where: { id: conference.id } })
+  })
+
+  return { deleted: true, name: conference.name }
+}

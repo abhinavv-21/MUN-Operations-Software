@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { Copy, UserPlus } from 'lucide-react'
+import { Copy, Crown, UserPlus } from 'lucide-react'
 import { Badge, InvitationBadge, RoleBadge } from '@/components/ui/Badge.tsx'
 import { Button } from '@/components/ui/Button.tsx'
 import { Card, CardHeader } from '@/components/ui/Card.tsx'
@@ -80,6 +80,8 @@ export function MembersClient({
   const [issuedLink, setIssuedLink] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [transferTo, setTransferTo] = useState<Member | null>(null)
+  const [transferConfirm, setTransferConfirm] = useState('')
 
   const ownerCount = members.filter((member) => member.role === 'OWNER').length
   const pending = invitations.filter((invitation) => !invitation.acceptedAt)
@@ -114,6 +116,31 @@ export function MembersClient({
     router.refresh()
   }
 
+  /**
+   * Ownership transfer, as one action rather than two role changes.
+   *
+   * The service has existed since Stage 2 with nothing calling it. Doing it as
+   * "promote them, demote me" leaves a window with two owners and, if the
+   * second step fails, a window with none — which is why it is a single
+   * endpoint, and why the control that drives it is a single control.
+   *
+   * Typed confirmation because it is irreversible from the current owner's side:
+   * after this, only the new owner can hand it back.
+   */
+  async function transferOwnership(userId: string) {
+    setError(null)
+    setBusy(true)
+    const result = await call(`/api/orgs/${orgSlug}/transfer-ownership`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    })
+    setBusy(false)
+    if (!result.ok) return setError(result.message)
+    setTransferTo(null)
+    setTransferConfirm('')
+    router.refresh()
+  }
+
   async function remove(userId: string) {
     setError(null)
     const result = await call(`/api/orgs/${orgSlug}/members/${userId}`, { method: 'DELETE' })
@@ -142,7 +169,7 @@ export function MembersClient({
             <div className="flex flex-col gap-1">
               <RoleBadge role={member.role} />
               {isLastOwner ? (
-                <span className="text-body-sm text-ink-tertiary">The only owner</span>
+                <span className="text-body-sm text-ink-secondary">The only owner</span>
               ) : null}
             </div>
           )
@@ -171,7 +198,7 @@ export function MembersClient({
         member.canManageMembers || member.role === 'OWNER' ? (
           <Badge tone="info">Yes</Badge>
         ) : (
-          <span className="text-ink-tertiary">No</span>
+          <span className="text-ink-secondary">No</span>
         ),
     },
     {
@@ -181,10 +208,26 @@ export function MembersClient({
         const isLastOwner = member.role === 'OWNER' && ownerCount === 1
         // Omitted rather than disabled where it cannot apply at all.
         if (isLastOwner || member.userId === currentUserId) return null
+
         return (
-          <Button variant="ghost" size="sm" onClick={() => remove(member.userId)}>
-            Remove
-          </Button>
+          <div className="flex justify-end gap-1">
+            {currentUserRole === 'OWNER' && member.role !== 'OWNER' ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setTransferTo(member)
+                  setTransferConfirm('')
+                }}
+              >
+                <Crown size={14} aria-hidden />
+                Make owner
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="sm" onClick={() => remove(member.userId)}>
+              Remove
+            </Button>
+          </div>
         )
       },
     },
@@ -235,6 +278,48 @@ export function MembersClient({
           </ul>
         </Card>
       ) : null}
+
+      <Modal
+        open={transferTo !== null}
+        onOpenChange={(open) => {
+          if (!open) setTransferTo(null)
+        }}
+        title="Transfer ownership"
+        description="One organisation, one owner. You become an admin."
+        holdsInput
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setTransferTo(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={busy}
+              disabled={transferTo === null || transferConfirm !== transferTo.email}
+              onClick={() => transferTo && transferOwnership(transferTo.userId)}
+            >
+              Transfer ownership
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-body text-ink-secondary">
+            {transferTo?.fullName ?? transferTo?.email} becomes the owner of this organisation and
+            you become an admin. Only they can hand it back.
+          </p>
+          <Field label={`Type "${transferTo?.email ?? ''}" to confirm`} required>
+            {({ id }) => (
+              <Input
+                id={id}
+                value={transferConfirm}
+                autoComplete="off"
+                onChange={(event) => setTransferConfirm(event.target.value)}
+              />
+            )}
+          </Field>
+        </div>
+      </Modal>
 
       <Modal
         open={inviteOpen}
